@@ -117,37 +117,38 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
         </div>
       )}
 
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white py-1.5 px-4 sm:px-6 lg:px-8 text-xs border-b border-slate-700/50 flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white py-1.5 px-3 sm:px-6 lg:px-8 text-xs border-b border-slate-700/50 flex flex-wrap items-center justify-between gap-2 overflow-hidden">
         {/* Status da Sincronização */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 max-w-full">
           {user ? (
-            <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 relative">
+            <div className="flex items-center gap-2 flex-wrap text-[11px] sm:text-xs">
+              <span className="flex h-2 w-2 relative shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
-                <Cloud className="h-3.5 w-3.5" />
-                Sincronização ativa na nuvem (Firebase)
+              <span className="text-emerald-400 font-semibold flex items-center gap-1.5 shrink-0">
+                <Cloud className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Sincronização ativa na nuvem (Firebase)</span>
+                <span className="sm:hidden">Nuvem ativa</span>
               </span>
               {lastSyncTime && (
-                <span className="text-slate-400 text-[11px] hidden sm:inline">
-                  • Atualizado às {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <span className="text-slate-400 text-[10px] sm:text-[11px] hidden xs:inline">
+                  • {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <CloudOff className="h-3.5 w-3.5 text-amber-400" />
-              <span className="text-slate-300">
-                Modo Offline Local. Conecte com o Google para salvar seus rendimentos na nuvem e abrir em qualquer dispositivo.
+            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs">
+              <CloudOff className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <span className="text-slate-300 truncate">
+                Modo Offline Local
               </span>
             </div>
           )}
         </div>
 
         {/* Conta & Ações */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap ml-auto">
           {authError && (
             <div className="flex items-center gap-1.5 bg-amber-950/70 border border-amber-500/40 rounded px-2 py-0.5 text-[11px]">
               <button
@@ -156,8 +157,8 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
                 title="Clique para ver instruções de autorização do domínio"
               >
                 <AlertCircle className="h-3 w-3 text-amber-400 shrink-0" />
-                <span className="max-w-[200px] sm:max-w-xs truncate font-medium">
-                  {isUnauthorizedDomain ? 'Liberar Domínio no Firebase' : authError}
+                <span className="max-w-[120px] sm:max-w-xs truncate font-medium">
+                  {isUnauthorizedDomain ? 'Liberar Domínio' : authError}
                 </span>
               </button>
               <button
@@ -172,21 +173,21 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
           )}
 
           {user ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3">
               {/* Foto ou Avatar */}
-              <div className="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700 rounded-full py-0.5 px-2">
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-800/80 border border-slate-700 rounded-full py-0.5 px-1.5 sm:px-2">
                 {user.photoURL ? (
                   <img
                     src={user.photoURL}
                     alt={user.displayName || 'Usuário'}
-                    className="w-4 h-4 rounded-full object-cover"
+                    className="w-4 h-4 rounded-full object-cover shrink-0"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <User className="h-3.5 w-3.5 text-slate-300" />
+                  <User className="h-3.5 w-3.5 text-slate-300 shrink-0" />
                 )}
-                <span className="text-slate-200 font-medium text-[11px] max-w-[120px] truncate">
-                  {user.displayName || user.email?.split('@')[0]}
+                <span className="text-slate-200 font-medium text-[10px] sm:text-[11px] max-w-[70px] sm:max-w-[120px] truncate">
+                  {user.displayName?.split(' ')[0] || user.email?.split('@')[0]}
                 </span>
               </div>
 
@@ -196,10 +197,10 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
                   disabled={isSyncing}
                   id="btn-force-sync"
                   title="Sincronizar dados agora com a nuvem (Firebase)"
-                  className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200 hover:text-emerald-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 px-2 py-0.5 rounded transition-all disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1 text-[10px] sm:text-[11px] font-medium text-slate-200 hover:text-emerald-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 px-1.5 sm:px-2 py-0.5 rounded transition-all disabled:opacity-50 cursor-pointer"
                 >
                   <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin text-emerald-400' : ''}`} />
-                  <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+                  <span className="hidden sm:inline">{isSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
                 </button>
               )}
 
@@ -207,15 +208,15 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
                 onClick={handleSwitchAccount}
                 disabled={isLoggingIn}
                 title="Escolher ou alternar para outra conta Google"
-                className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-emerald-300 transition-colors py-0.5 px-1.5 rounded hover:bg-slate-800"
+                className="flex items-center gap-1 text-[10px] sm:text-[11px] text-slate-300 hover:text-emerald-300 transition-colors py-0.5 px-1 rounded hover:bg-slate-800"
               >
                 <UserPlus className="h-3 w-3" />
-                <span>Trocar Conta</span>
+                <span className="hidden sm:inline">Trocar</span>
               </button>
 
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-rose-400 transition-colors py-0.5 px-1.5 rounded hover:bg-slate-800"
+                className="flex items-center gap-1 text-[10px] sm:text-[11px] text-slate-300 hover:text-rose-400 transition-colors py-0.5 px-1 rounded hover:bg-slate-800"
               >
                 <LogOut className="h-3 w-3" />
                 <span>Sair</span>
@@ -227,14 +228,14 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
               disabled={isLoggingIn}
               id="btn-cloud-login"
               title="Abre o seletor para você escolher qualquer conta Google"
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold py-1 px-3 rounded-md transition-all shadow-xs text-xs cursor-pointer"
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold py-1 px-2.5 rounded-md transition-all shadow-xs text-[11px] sm:text-xs cursor-pointer"
             >
               {isLoggingIn ? (
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <LogIn className="h-3.5 w-3.5" />
               )}
-              <span>Escolher / Conectar Conta Google</span>
+              <span>Conectar Google</span>
             </button>
           )}
         </div>

@@ -99,14 +99,14 @@ export const GoalBanner: React.FC<GoalBannerProps> = ({
               </button>
             </form>
           ) : (
-            <div className="flex flex-wrap items-baseline gap-3 mb-2">
-              <span className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display text-white">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+              <span className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight font-display text-white truncate max-w-full">
                 {formatCurrency(currentDailyYield)}
               </span>
-              <span className="text-slate-400 text-sm font-medium">
+              <span className="text-slate-400 text-xs sm:text-sm font-medium">
                 de <strong className="text-white">{formatCurrency(goal)}</strong> por dia
               </span>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+              <span className={`text-[11px] sm:text-xs font-bold px-2 py-0.5 rounded-full ${
                 isGoalReached 
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
                   : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -132,12 +132,12 @@ export const GoalBanner: React.FC<GoalBannerProps> = ({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300">
             {isGoalReached ? (
               <div className="flex items-center gap-1.5 text-emerald-300 font-medium">
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
                 <span>Meta diária atingida! Rendimento projetado de <strong>{formatCurrency(currentDailyYield * 30)}/mês</strong>.</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 text-slate-300">
-                <Sparkles className="h-4 w-4 text-emerald-400" />
+                <Sparkles className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span>
                   Faltam <strong>{formatCurrency(gap)}/dia</strong>. Aporte sugerido de ~<strong>{formatCurrency(estimatedCapitalNeededForGoal)}</strong> na taxa média de {formatPercentBR(effectiveRate, 2)} ao dia.
                 </span>
@@ -147,9 +147,9 @@ export const GoalBanner: React.FC<GoalBannerProps> = ({
         </div>
 
         {/* Right Side: Monthly Projection Card */}
-        <div className="bg-slate-800/80 rounded-xl p-4 border border-slate-700/80 flex flex-col justify-center min-w-[200px] shrink-0">
+        <div className="bg-slate-800/80 rounded-xl p-3.5 sm:p-4 border border-slate-700/80 flex flex-col justify-center w-full md:w-auto md:min-w-[200px] shrink-0">
           <span className="text-xs text-slate-400 font-medium">Projeção Mensal (30 dias)</span>
-          <div className="text-xl font-bold text-emerald-400 font-display mt-0.5">
+          <div className="text-lg sm:text-xl font-bold text-emerald-400 font-display mt-0.5">
             {formatCurrency(currentDailyYield * 30)}
           </div>
           <div className="mt-2 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-700/60 pt-2">

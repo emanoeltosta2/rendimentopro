@@ -102,73 +102,73 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   return (
     <div className="space-y-6">
       {/* 4 Main Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* 1. Total Investido */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
             <span className="text-xs font-semibold tracking-normal">Total investido ativo</span>
             <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-slate-900 dark:text-slate-100">
+          <div className="text-xl sm:text-2xl font-bold font-display text-slate-900 dark:text-slate-100 truncate">
             {formatCurrency(totalInvestedActive)}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1 flex-wrap">
             <span>{activeProducts.length} produtos ativo(s)</span>
             <span className="font-semibold text-slate-700 dark:text-slate-300">Contratos vigentes</span>
           </div>
         </div>
 
         {/* 2. Rendimento Diário */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/20 dark:bg-emerald-950/20 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/20 dark:bg-emerald-950/20 shadow-xs">
           <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400 mb-2">
             <span className="text-xs font-semibold tracking-normal">Rendimento diário</span>
             <div className="p-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded-lg">
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-emerald-600 dark:text-emerald-400">
+          <div className="text-xl sm:text-2xl font-bold font-display text-emerald-600 dark:text-emerald-400 truncate">
             +{formatCurrency(totalDailyYield)}
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">/dia</span>
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1 flex-wrap">
             <span>Projeção mensal:</span>
             <span className="font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(totalDailyYield * 30)}</span>
           </div>
         </div>
 
         {/* 3. Retorno Bruto Acumulado */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
             <span className="text-xs font-semibold tracking-normal">Retorno bruto médio</span>
             <div className="p-2 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-lg">
               <Percent className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-blue-700 dark:text-blue-400">
+          <div className="text-xl sm:text-2xl font-bold font-display text-blue-700 dark:text-blue-400 truncate">
             {formatPercent(grossReturnPercentage, 1)}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1 flex-wrap">
             <span>Total bruto projetado:</span>
-            <span className="font-semibold text-slate-800 dark:text-slate-200">{formatCurrency(totalGrossReturnSum)}</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{formatCurrency(totalGrossReturnSum)}</span>
           </div>
         </div>
 
         {/* 4. Lucro Líquido Real (Pós Taxa de Saque) */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
             <span className="text-xs font-semibold tracking-normal">Lucro líquido real</span>
             <div className="p-2 bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 rounded-lg">
               <ShieldCheck className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-teal-700 dark:text-teal-400">
+          <div className="text-xl sm:text-2xl font-bold font-display text-teal-700 dark:text-teal-400 truncate">
             {formatCurrency(totalNetProfitSum)}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Taxas de saque retidas:</span>
-            <span className="text-amber-700 dark:text-amber-400 font-semibold">-{formatCurrency(totalFeesEstimated)}</span>
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1 flex-wrap">
+            <span>Taxas retidas:</span>
+            <span className="text-amber-700 dark:text-amber-400 font-semibold truncate">-{formatCurrency(totalFeesEstimated)}</span>
           </div>
         </div>
       </div>

@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  TrendingUp, 
   Settings as SettingsIcon, 
   Calendar as CalendarIcon, 
   PlusCircle, 
@@ -16,6 +15,7 @@ import { PlatformSettings } from '../types/investment';
 import { formatCurrency } from '../utils/calculations';
 import { useTheme } from '../context/ThemeContext';
 import { PWAInstallButton } from './PWAInstallButton';
+import { LogoIcon } from './LogoIcon';
 
 interface HeaderProps {
   currentTab: 'dashboard' | 'calendar' | 'products' | 'expenses' | 'simulator';
@@ -41,20 +41,20 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-xs transition-colors duration-200">
       {/* Top Banner / Brand */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-2">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-2">
           {/* Logo & Name */}
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/20 shrink-0">
-              <TrendingUp className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+          <div className="flex items-center gap-2 sm:gap-3 shrink min-w-0">
+            <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl overflow-hidden shadow-md shadow-emerald-600/20 shrink-0 border border-emerald-500/30 flex items-center justify-center">
+              <LogoIcon className="w-full h-full object-cover" />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-display font-bold text-base sm:text-lg text-slate-900 dark:text-slate-100 tracking-tight">
+            <div className="min-w-0 truncate">
+              <div className="flex items-center gap-1 sm:gap-2">
+                <span className="font-display font-bold text-sm sm:text-lg text-slate-900 dark:text-slate-100 tracking-tight truncate">
                   RendimentoPro
                 </span>
-                <span className="text-[9px] sm:text-[10px] font-semibold tracking-normal px-1.5 sm:px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-md border border-emerald-200/60 dark:border-emerald-800/60">
-                  Gestão ativa
+                <span className="text-[8px] sm:text-[10px] font-semibold tracking-normal px-1 sm:px-2 py-0.2 sm:py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-md border border-emerald-200/60 dark:border-emerald-800/60 shrink-0">
+                  PRO
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 hidden lg:block">
@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Quick Stats Badges & Actions */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {/* Daily Yield Quick Chip */}
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700/80">
               <span className="text-xs text-slate-500 dark:text-slate-400">Rendimento hoje:</span>
@@ -89,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={toggleTheme}
               id="btn-theme-toggle"
               title={isDark ? "Alternar para tema claro" : "Alternar para tema escuro"}
-              className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer border border-transparent dark:border-slate-700/60"
+              className="p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer border border-transparent dark:border-slate-700/60"
             >
               {isDark ? (
                 <Sun className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-amber-400" />
@@ -103,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={onOpenNewProduct}
                 id="btn-header-add-product"
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm transition-all cursor-pointer"
+                className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm transition-all cursor-pointer"
               >
                 <PlusCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <span className="hidden sm:inline">Novo produto</span>
@@ -123,9 +123,9 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenSettings}
                 id="btn-header-settings"
                 title="Configurações e Metas"
-                className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >
-                <SettingsIcon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+                <SettingsIcon className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
             </div>
           </div>
