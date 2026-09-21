@@ -1,0 +1,6 @@
+{
+  "name": "RendimentoPro - Gestão de Investimentos",
+  "description": "Gerenciador financeiro de investimentos com cálculo de rendimento diário, lucro líquido, calendário de recebimentos e recomendação inteligente para pagamento de despesas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

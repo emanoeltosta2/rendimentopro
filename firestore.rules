@@ -1,0 +1,128 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Validação de Perfil de Usuário
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['userId', 'dailyGoalAmount']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.dailyGoalAmount is number && data.dailyGoalAmount >= 0 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+             (!('withdrawalFeePercentage' in data) || data.withdrawalFeePercentage is number) &&
+             (!('fixedWithdrawalFee' in data) || data.fixedWithdrawalFee is number) &&
+             (!('minWithdrawalAmount' in data) || data.minWithdrawalAmount is number) &&
+             (!('minDepositAmount' in data) || data.minDepositAmount is number) &&
+             (!('reinvestmentBufferPercentage' in data) || data.reinvestmentBufferPercentage is number) &&
+             (!('goalCycleStartDate' in data) || data.goalCycleStartDate == null || (data.goalCycleStartDate is string && data.goalCycleStartDate.size() <= 30)) &&
+             (!('dynamicBufferEnabled' in data) || data.dynamicBufferEnabled is bool) &&
+             (!('protectionProfile' in data) || (data.protectionProfile is string && data.protectionProfile.size() <= 30)) &&
+             (!('completedRoadmapDays' in data) || data.completedRoadmapDays is list) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    // Validação de Produto de Investimento
+    function isValidInvestmentProduct(data) {
+      return data.keys().hasAll(['userId', 'name', 'investedAmount', 'dailyPercentage', 'durationDays', 'startDate', 'status']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.investedAmount is number && data.investedAmount >= 0 &&
+             data.dailyPercentage is number && data.dailyPercentage >= 0 &&
+             data.durationDays is number && data.durationDays >= 1 &&
+             data.startDate is string && data.startDate.size() <= 30 &&
+             data.status in ['active', 'completed', 'paused'] &&
+             (!('returnCapitalAtEnd' in data) || data.returnCapitalAtEnd is bool) &&
+             (!('returnAmount' in data) || data.returnAmount == null || data.returnAmount is number) &&
+             (!('returnType' in data) || data.returnType in ['total', 'daily']) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('isReinvestment' in data) || data.isReinvestment is bool) &&
+             (!('isNewInvestment' in data) || data.isNewInvestment is bool) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    // Validação de Despesa
+    function isValidExpense(data) {
+      return data.keys().hasAll(['userId', 'title', 'amount', 'category', 'isPaid']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.amount is number && data.amount >= 0 &&
+             data.category is string && data.category.size() <= 100 &&
+             data.isPaid is bool &&
+             (!('dueDate' in data) || data.dueDate == null || (data.dueDate is string && data.dueDate.size() <= 30)) &&
+             (!('hasDueDate' in data) || data.hasDueDate is bool) &&
+             (!('deductFromRoadmap' in data) || data.deductFromRoadmap is bool) &&
+             (!('paidDate' in data) || data.paidDate == null || (data.paidDate is string && data.paidDate.size() <= 30)) &&
+             (!('installmentGroupId' in data) || data.installmentGroupId == null || (data.installmentGroupId is string && data.installmentGroupId.size() <= 128)) &&
+             (!('installmentNumber' in data) || data.installmentNumber == null || (data.installmentNumber is number && data.installmentNumber >= 1)) &&
+             (!('totalInstallments' in data) || data.totalInstallments == null || (data.totalInstallments is number && data.totalInstallments >= 1)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    // Validação de Modelo/Template de Produto
+    function isValidProductTemplate(data) {
+      return data.keys().hasAll(['userId', 'name', 'investedAmount', 'dailyPercentage', 'durationDays']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.investedAmount is number && data.investedAmount >= 0 &&
+             data.dailyPercentage is number && data.dailyPercentage >= 0 &&
+             data.durationDays is number && data.durationDays >= 1 &&
+             (!('returnAmount' in data) || data.returnAmount == null || data.returnAmount is number) &&
+             (!('returnType' in data) || data.returnType in ['total', 'daily']) &&
+             (!('returnCapitalAtEnd' in data) || data.returnCapitalAtEnd is bool) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    // Regras para Coleção de Usuários
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow delete: if isOwner(userId);
+
+      // Subcoleção de Produtos
+      match /products/{productId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidInvestmentProduct(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(userId) && isValidInvestmentProduct(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcoleção de Despesas
+      match /expenses/{expenseId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidExpense(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(userId) && isValidExpense(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcoleção de Templates
+      match /templates/{templateId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidProductTemplate(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(userId) && isValidProductTemplate(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // A verificação de conectividade passou a usar o documento do próprio
+    // usuário autenticado; a regra pública de /test/connection foi removida.
+  }
+}

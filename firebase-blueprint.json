@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "Perfil do Usuário",
+      "description": "Configurações e perfil do investidor na nuvem",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "withdrawalFeePercentage": { "type": "number" },
+        "fixedWithdrawalFee": { "type": "number" },
+        "minWithdrawalAmount": { "type": "number" },
+        "minDepositAmount": { "type": "number" },
+        "dailyGoalAmount": { "type": "number" },
+        "reinvestmentBufferPercentage": { "type": "number" },
+        "goalCycleStartDate": { "type": "string", "maxLength": 30 },
+        "dynamicBufferEnabled": { "type": "boolean" },
+        "protectionProfile": { "type": "string", "maxLength": 30 },
+        "completedRoadmapDays": { "type": "array" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "dailyGoalAmount"]
+    },
+    "InvestmentProduct": {
+      "title": "Produto de Investimento",
+      "description": "Contrato ou produto com rendimento diário cadastrado pelo usuário",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "investedAmount": { "type": "number" },
+        "returnAmount": { "type": "number" },
+        "returnType": { "type": "string", "enum": ["total", "daily"] },
+        "dailyPercentage": { "type": "number" },
+        "durationDays": { "type": "number" },
+        "startDate": { "type": "string", "maxLength": 30 },
+        "returnCapitalAtEnd": { "type": "boolean" },
+        "category": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["active", "completed", "paused"] },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "isReinvestment": { "type": "boolean" },
+        "isNewInvestment": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "name", "investedAmount", "dailyPercentage", "durationDays", "startDate", "status"]
+    },
+    "Expense": {
+      "title": "Despesa / Conta a Pagar",
+      "description": "Despesa programada vinculada ao fluxo de caixa de rendimentos do usuário",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "hasDueDate": { "type": "boolean" },
+        "category": { "type": "string", "maxLength": 100 },
+        "isPaid": { "type": "boolean" },
+        "paidDate": { "type": "string", "maxLength": 30 },
+        "deductFromRoadmap": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "installmentGroupId": { "type": "string", "maxLength": 128 },
+        "installmentNumber": { "type": "number" },
+        "totalInstallments": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "title", "amount", "category", "isPaid"]
+    },
+    "ProductTemplate": {
+      "title": "Modelo de Produto Pré-cadastrado",
+      "description": "Template reutilizável para criação rápida de contratos de investimento",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "investedAmount": { "type": "number" },
+        "returnAmount": { "type": "number" },
+        "returnType": { "type": "string", "enum": ["total", "daily"] },
+        "dailyPercentage": { "type": "number" },
+        "durationDays": { "type": "number" },
+        "returnCapitalAtEnd": { "type": "boolean" },
+        "category": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "name", "investedAmount", "dailyPercentage", "durationDays"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Armazena configurações e preferências de cada investidor autenticado"
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": "InvestmentProduct",
+      "description": "Produtos e contratos de investimento pertencentes exclusivamente ao investidor"
+    },
+    "/users/{userId}/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Despesas e contas a pagar do investidor"
+    },
+    "/users/{userId}/templates/{templateId}": {
+      "schema": "ProductTemplate",
+      "description": "Modelos/templates de contratos pré-cadastrados do investidor"
+    }
+  }
+}
