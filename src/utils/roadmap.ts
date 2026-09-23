@@ -385,6 +385,8 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
    * aporte global datado em "hoje" — agora viram um lançamento na lista, para
    * não perder o que você já havia configurado.
    */
+    /** Datas em que o usuario adiou as compras do dia (o motor pula a aquisicao). */
+  const deferredAcquisitionDates = new Set(settings.deferredAcquisitions ?? []);
   const manualMovementsByDate = new Map<string, { bank: number; protection: number }[]>();
   const pushMovement = (date: string, bank: number, protection: number) => {
     if (!date) return;
@@ -1300,7 +1302,30 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     // consiga executá-la; ela é apenas uma prévia e não altera contratos, caixa
     // nem rendimento até a confirmação.
     const previewTodayAction = !roadmapActionRealized && dateOnDay === today;
-    if ((roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
+    /**
+     * Adiamento de compras.
+     */
+    const isAcquisitionDeferred = deferredAcquisitionDates.has(dateOnDay);
+
+    if (isAcquisitionDeferred && roadmapActionRealized && rawMilestones.length < MAX_MILESTONES) {
+      const deferredCash = Number(currentFreeCash.toFixed(2));
+      if (deferredCash > 0) {
+        rawMilestones.push({
+          date: dateOnDay,
+          dateFormatted,
+          dayNumber: day,
+          type: 'acquisition_deferred',
+          title: `Compras adiadas: ${formatCurrency(deferredCash)} seguem no caixa`,
+          description: `Você adiou as aquisições deste dia. Nenhuma cota foi comprada e o saldo de ${formatCurrency(deferredCash)} continua disponível — a próxima data com compras reotimiza a alocação com esse valor somado.`,
+          amount: deferredCash,
+          dailyYieldAfter: dailyGross,
+        });
+      }
+    }
+
+    if (!isAcquisitionDeferred && (roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
+      for (let pass = 0; pass < 40; pass++) {
+        ... (resto fica exatamente igual)
       for (let pass = 0; pass < 40; pass++) {
         const canConsolidateNow = hasMissingOptimalToBuy();
         if (deficitRemaining <= 0.001 && !canConsolidateNow) break;
