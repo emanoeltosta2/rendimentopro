@@ -498,9 +498,37 @@ export default function App() {
       // Se o usuário adiou as compras deste dia, nenhuma cota é criada — mas as
       // despesas seguem sendo pagas e a data continua sendo marcada como concluída.
       const isDeferred = (settings.deferredAcquisitions ?? []).includes(date);
-      const acquisitions = isDeferred
+
+      /**
+       * Evita duplicar compra que o usuário já registrou à mão.
+       *
+       * O motor projeta as compras do dia sem saber o que foi cadastrado
+       * manualmente. Se você lançou um NW354 de R$ 25 naquele dia, concluir o
+       * dia criaria um SEGUNDO NW354 — e a renda diária subiria sozinha, sem
+       * dinheiro novo ter entrado.
+       *
+       * A checagem é por nome + data de início: se já existe um contrato ativo
+       * com o mesmo nome começando nesta data, a compra daquele dia já foi
+       * feita e o motor não cria outra.
+       */
+      const manualKeysToday = new Set(
+        products
+          .filter(
+            (p) =>
+              p.startDate === date &&
+              !p.roadmapAcquisitionDate &&
+              p.status !== 'completed'
+          )
+          .map((p) => p.name.trim().toLowerCase())
+      );
+
+      const projected = isDeferred
         ? []
         : (details.acquisitionsToday ?? details.newPurchasesToday ?? []);
+      const acquisitions = projected.filter(
+        (acq) => !manualKeysToday.has((acq.name || '').trim().toLowerCase())
+      );
+
       if (acquisitions.length > 0) {
 
         const newProducts: InvestmentProduct[] = acquisitions.map((acq) => ({
@@ -536,7 +564,7 @@ export default function App() {
         });
       }
     },
-    [settings, products, user, trackWrite, persistSettings]
+    [settings, user, trackWrite, persistSettings]
   );
 
   const handleUndoCompleteRoadmapDay = useCallback(
@@ -602,90 +630,6 @@ export default function App() {
         ...settings,
         completedRoadmapDays: currentCompleted.filter((d) => d !== date),
         deferredAcquisitions: (settings.deferredAcquisitions ?? []).filter((d) => d !== date),
-      });
-    },
-    [settings, products, expenses, user, trackWrite, persistSettings]
-  );
-
-  /**
-   * Liga/desliga o adiamento das compras de um dia.
-   *
-   * Quando o dia AINDA NAO foi concluido, basta gravar a data: o motor pula a
-   * compra e o caixa acumula para o dia seguinte.
-   *
-   * Quando o dia JA FOI concluido, o adiamento precisa ser retroativo: os
-   * produtos que nasceram daquele dia sao removidos (devolvendo o caixa) e as
-   * despesas quitadas por ele voltam a ficar pendentes — exatamente o mesmo
-   * rollback do botao "Desfazer Conclusao". Depois disso a data entra na lista
-   * de adiadas e o dia pode ser concluido novamente sem comprar nada.
-   */
-  const handleToggleDeferAcquisitions = useCallback(
-    (date: string, deferred: boolean) => {
-      const current = new Set(settings.deferredAcquisitions ?? []);
-      const wasCompleted = (settings.completedRoadmapDays ?? []).includes(date);
-
-      if (deferred) {
-        current.add(date);
-
-        if (wasCompleted) {
-          // Efeitos ja aplicados: precisam ser revertidos antes de adiar.
-          const productsToRollback = products.filter(
-            (p) => p.roadmapAcquisitionDate === date
-          );
-
-          if (productsToRollback.length > 0) {
-            const rollbackIds = new Set(productsToRollback.map((p) => p.id));
-            setProducts((prev) => prev.filter((p) => !rollbackIds.has(p.id)));
-
-            if (user) {
-              for (const product of productsToRollback) {
-                trackWrite(firestoreSync.deleteProduct(user.uid, product.id));
-              }
-            }
-          }
-
-          const expensesToRollback = expenses.filter(
-            (e) => e.roadmapPaidDate === date && e.paidDate === date
-          );
-
-          if (expensesToRollback.length > 0) {
-            const rollbackIds = new Set(expensesToRollback.map((e) => e.id));
-            setExpenses((prev) =>
-              prev.map((e) =>
-                rollbackIds.has(e.id)
-                  ? { ...e, isPaid: false, paidDate: undefined, roadmapPaidDate: undefined }
-                  : e
-              )
-            );
-
-            if (user) {
-              for (const expense of expensesToRollback) {
-                trackWrite(
-                  firestoreSync.saveExpense(user.uid, {
-                    ...expense,
-                    isPaid: false,
-                    paidDate: undefined,
-                    roadmapPaidDate: undefined,
-                  })
-                );
-              }
-            }
-          }
-
-          persistSettings({
-            ...settings,
-            deferredAcquisitions: Array.from(current).sort(),
-            completedRoadmapDays: (settings.completedRoadmapDays ?? []).filter((d) => d !== date),
-          });
-          return;
-        }
-      } else {
-        current.delete(date);
-      }
-
-      persistSettings({
-        ...settings,
-        deferredAcquisitions: Array.from(current).sort(),
       });
     },
     [settings, products, expenses, user, trackWrite, persistSettings]
