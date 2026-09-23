@@ -162,7 +162,10 @@ export interface PortfolioMilestone {
     | 'new_investment'
     | 'capital_protection'
     | 'optimization_start'
-    | 'optimization_completed';
+    | 'optimization_completed'
+    | 'manual_cash'
+    | 'acquisition_deferred';
+
   title: string;
   description: string;
   amount?: number; // Valor total do saque bruto ou reinvestimento
