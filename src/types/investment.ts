@@ -71,8 +71,6 @@ export interface PlatformSettings {
   manualCashMovements?: ManualCashMovement[];
 }
 
-}
-
 /** Lançamento manual de caixa, registrado no detalhe de um dia do Roadmap. */
 export interface ManualCashMovement {
   id: string;
@@ -84,8 +82,6 @@ export interface ManualCashMovement {
   protection?: number;
   /** Anotação livre do usuário. */
   note?: string;
-}
-
 }
 
 export interface ProductCalculations {
@@ -157,7 +153,7 @@ export interface PortfolioMilestone {
     | 'new_investment'
     | 'capital_protection'
     | 'optimization_start'
-    | 'optimization_completed';
+    | 'optimization_completed'
     | 'manual_cash';
   title: string;
   description: string;
