@@ -137,6 +137,7 @@ function buildSettingsPayload(
     manualProtectionInjectionDate: s.manualProtectionInjectionDate ?? null,
     completedRoadmapDays: s.completedRoadmapDays ?? [],
     manualCashMovements: s.manualCashMovements ?? [],
+    deferredAcquisitions: s.deferredAcquisitions ?? [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -327,6 +328,7 @@ export const firestoreSync = {
             manualProtectionInjectionDate: typeof d.manualProtectionInjectionDate === 'string' && d.manualProtectionInjectionDate.trim() ? d.manualProtectionInjectionDate.trim() : undefined,
             completedRoadmapDays: Array.isArray(d.completedRoadmapDays) ? d.completedRoadmapDays : [],
             manualCashMovements: Array.isArray(d.manualCashMovements) ? d.manualCashMovements : [],
+            deferredAcquisitions: Array.isArray(d.deferredAcquisitions) ? d.deferredAcquisitions : [],
           })
         );
       },
