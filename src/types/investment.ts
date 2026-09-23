@@ -13,6 +13,9 @@ export interface InvestmentProduct {
   notes?: string;
   isReinvestment?: boolean;
   isNewInvestment?: boolean;
+  /** Metadados internos: produto criado ao concluir uma ação do Roadmap. */
+  roadmapAcquisitionDate?: string;
+  roadmapAcquisitionDay?: number;
 }
 
 export interface ProductTemplate {
@@ -38,6 +41,8 @@ export interface Expense {
   category: 'Moradia' | 'Cartão / Fatura' | 'Serviços' | 'Alimentação' | 'Reinvestimento' | 'Imprevisto' | 'Outros';
   isPaid: boolean;
   paidDate?: string;
+  /** Indica que a quitação foi aplicada automaticamente ao concluir um dia do Roadmap. */
+  roadmapPaidDate?: string;
   deductFromRoadmap?: boolean; // Se abater do saldo de reinvestimento do Roadmap (Padrão: true)
   notes?: string;
   installmentGroupId?: string; // ID do grupo de parcelas se for gasto parcelado
@@ -57,6 +62,12 @@ export interface PlatformSettings {
   dynamicBufferEnabled?: boolean; // Se o buffer de reinvestimento protegido dinâmico está ativado (Padrão: true)
   protectionProfile?: 'conservative' | 'balanced' | 'aggressive' | 'accelerated'; // Perfil de proteção contra risco de plataforma
   completedRoadmapDays?: string[]; // Lista de datas YYYY-MM-DD com ações do dia já concluídas
+  /** Aporte externo livre que passa a existir a partir do dia atual do roadmap. */
+  manualBankInjection?: number;
+  manualBankInjectionDate?: string;
+  /** Aporte externo destinado à reserva de blindagem a partir do dia atual. */
+  manualProtectionInjection?: number;
+  manualProtectionInjectionDate?: string;
 }
 
 export interface ProductCalculations {
@@ -124,6 +135,7 @@ export interface PortfolioMilestone {
     | 'goal_maintenance'
     | 'expense_withdrawal'
     | 'expense_unfundable'
+    | 'expense_rescheduled'
     | 'new_investment'
     | 'capital_protection'
     | 'optimization_start'
@@ -244,6 +256,8 @@ export interface RoadmapPointDetails {
   expensesTodayList: Expense[];
   /** Indica se esta data é o marco/ponto de início da projeção do roadmap. */
   isStartDate?: boolean;
+  /** Indica se esta data corresponde ao dia civil atual. */
+  isToday?: boolean;
   /** Indica se este dia está dentro do período de otimização de produtos pós-meta */
   isOptimizationPhase?: boolean;
   /** Indica se neste dia a carteira já alcançou o número mínimo de contratos otimizados */
@@ -275,6 +289,8 @@ export interface PortfolioRoadmapPoint {
   isOptimizedState?: boolean;
   /** Indica se este ponto representa o Ponto de Início da projeção. */
   isStartDate?: boolean;
+  /** Indica o dia civil atual, para separar o presente da projeção futura. */
+  isToday?: boolean;
   /** Caixa líquido seguro na conta bancária ao fim do dia. */
   bankBalance?: number;
   /** Saldo bruto retido na plataforma ao fim do dia (aguardando saque mínimo). */

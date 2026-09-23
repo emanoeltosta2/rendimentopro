@@ -216,6 +216,14 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   const settings = normalizeSettings(options.settings);
   const today = options.today ?? getTodayString();
 
+  // Um dia passado/atual só pode alterar o estado real da carteira se o usuário
+  // tiver confirmado aquele dia. Dias futuros continuam sendo projeções.
+  // Isso evita que um aporte ou uma quitação planejados para ontem continuem
+  // gerando rendimento/caixa no roadmap depois que o dia foi perdido.
+  const completedRoadmapDays = new Set(settings.completedRoadmapDays ?? []);
+  const canRealizeRoadmapAction = (date: string): boolean =>
+    date > today || completedRoadmapDays.has(date);
+
   const feeRate = settings.withdrawalFeePercentage / 100;
   const fixedFee = settings.fixedWithdrawalFee;
   const minWithdrawal = settings.minWithdrawalAmount;
@@ -416,6 +424,12 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       // dia 0, e não em uma data passada que a simulação jamais alcança.
       if (scheduledDate < baseStartDate) scheduledDate = baseStartDate;
 
+      // Se a recomendação ficou para trás porque o usuário não concluiu o dia,
+      // a pendência volta para o mapa a partir de hoje. Assim ela não fica
+      // presa em uma data histórica invisível: reaparece como ação pendente
+      // no presente e volta a disputar caixa/reinvestimento normalmente.
+      if (scheduledDate < today) scheduledDate = today;
+
       scheduledPendingExpenses.push({
         expense: e,
         scheduledDate,
@@ -431,7 +445,72 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       if (a.expense.amount !== b.expense.amount) return a.expense.amount - b.expense.amount;
       return a.expense.id.localeCompare(b.expense.id);
     });
+
+    // Registra visualmente o vencimento que ficou para trás quando uma conta
+    // pendente precisou ser deslocada para hoje. Esse evento é apenas histórico
+    // informativo: ele NÃO debita caixa nem finge que a conta foi paga.
+    for (const item of scheduledPendingExpenses) {
+      const dueDate = item.expense.dueDate?.trim().split('T')[0];
+      if (!dueDate || dueDate >= today || item.scheduledDate === dueDate) continue;
+
+      const dueDay = diffInDays(baseStartDate, dueDate);
+      if (dueDay < 0 || dueDay > 10000) continue;
+
+      rawMilestones.push({
+        date: dueDate,
+        dateFormatted: formatDateBR(dueDate),
+        dayNumber: dueDay,
+        type: 'expense_rescheduled',
+        title: `Vencida: ${item.expense.title}`,
+        description: `Vencimento em ${formatDateBR(dueDate)} não concluído. A dívida permanece aberta e foi realocada para ${formatDateBR(item.scheduledDate)}.`,
+        amount: 0,
+        expenseAmount: item.expense.amount,
+        dailyYieldAfter: 0,
+      });
+    }
+
+    // Se a melhor data de pagamento caiu em hoje, mostra a ação no próprio
+    // dia atual mesmo sem marcar o dia como concluído. É uma previsão/pendência
+    // visual, não uma baixa financeira. Se hoje não for concluído, no próximo
+    // recálculo a data poderá avançar novamente.
+    for (const item of scheduledPendingExpenses) {
+      if (item.scheduledDate !== today || item.deducted || item.unfundable || completedRoadmapDays.has(today)) continue;
+
+      const todayDay = diffInDays(baseStartDate, today);
+      rawMilestones.push({
+        date: today,
+        dateFormatted: formatDateBR(today),
+        dayNumber: todayDay,
+        type: 'expense_rescheduled',
+        title: `Pagamento previsto: ${item.expense.title}`,
+        description: `Pagamento recomendado para hoje (${formatDateBR(today)}) no valor de ${formatCurrency(item.expense.amount)}. A baixa só acontece quando este dia for marcado como concluído.`,
+        amount: 0,
+        expenseAmount: item.expense.amount,
+        dailyYieldAfter: 0,
+      });
+    }
   }
+
+  // CORREÇÃO (Prioridade Meta — revisada): a versão anterior desta correção
+  // adiava o PAGAMENTO de qualquer despesa sem vencimento até a meta ser
+  // batida. Isso resolvia o atraso artificial, mas exagerava para o outro
+  // lado: uma conta pequena e totalmente pagável (ex.: R$60, R$100) ficava
+  // represada por semanas só por não ter data — mesmo quando pagá-la teria
+  // impacto mínimo (frações de dia) no cronograma.
+  //
+  // O ajuste certo não é "nunca pagar antes da meta", e sim "nunca fingir que
+  // ela é urgente antes de precisar ser paga": uma despesa sem vencimento
+  // continua sendo paga assim que o caixa livre naturalmente permite (Tier 3
+  // — a menor prioridade da fila, atrás de qualquer conta com vencimento
+  // real; ver `getExpenseUrgencyTier`), então o único custo é o genuíno —
+  // proporcional ao valor e ao quão cedo ela é paga — sem amplificação
+  // artificial. O que ELA NUNCA deve fazer é disparar proteção antecipada
+  // para algo que não tem prazo: nem reservar caixa de antemão (Passo 5),
+  // nem acelerar a blindagem dinâmica por "enxergá-la" como conta próxima
+  // (Passo 3) — isso sim inflava o atraso muito além do custo real, inclusive
+  // para despesas pequenas.
+  const hasFixedDueDate = (item: ScheduledRoadmapExpense): boolean =>
+    Boolean(item.expense.dueDate && item.expense.dueDate.trim());
 
   // ---------------------------------------------------------------------
   // Catálogo de cotas disponíveis para compra
@@ -494,6 +573,33 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   for (let day = 0; day <= maxSimulationDays; day++) {
     const dateOnDay = addDays(baseStartDate, day);
     const dateFormatted = formatDateBR(dateOnDay);
+    const roadmapActionRealized = canRealizeRoadmapAction(dateOnDay);
+
+    // Aportes externos são eventos persistentes, com uma única data de entrada.
+    // Isso evita reinjetar o mesmo dinheiro a cada novo dia do roadmap: se um
+    // aporte de R$ 100 foi usado parcialmente ontem, amanhã a simulação reencena
+    // o aporte original e também a saída de ontem, preservando o saldo real.
+    const bankInjectionDate = settings.manualBankInjectionDate;
+    const protectionInjectionDate = settings.manualProtectionInjectionDate;
+    const shouldApplyBankInjection =
+      Boolean(settings.manualBankInjection && settings.manualBankInjection > 0) &&
+      ((bankInjectionDate && dateOnDay === bankInjectionDate) ||
+        (!bankInjectionDate && dateOnDay === today) ||
+        (day === 0 && !!bankInjectionDate && bankInjectionDate < baseStartDate));
+    const shouldApplyProtectionInjection =
+      Boolean(settings.manualProtectionInjection && settings.manualProtectionInjection > 0) &&
+      ((protectionInjectionDate && dateOnDay === protectionInjectionDate) ||
+        (!protectionInjectionDate && dateOnDay === today) ||
+        (day === 0 && !!protectionInjectionDate && protectionInjectionDate < baseStartDate));
+
+    if (shouldApplyBankInjection) {
+      bankBalance = Number((bankBalance + (settings.manualBankInjection ?? 0)).toFixed(2));
+    }
+    if (shouldApplyProtectionInjection) {
+      totalProtectedCashAccumulated = Number(
+        (totalProtectedCashAccumulated + (settings.manualProtectionInjection ?? 0)).toFixed(2)
+      );
+    }
 
     // --- 1. Rendimento e devolução de capital -------------------------
     // Regra de 24h: o dia da compra não rende; a primeira renda vem 24h depois.
@@ -582,8 +688,15 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         durationAdj = -12;
       }
 
+      // CORREÇÃO (Prioridade Meta): uma despesa sem vencimento fixo não deve
+      // acelerar a blindagem (retendo mais caixa do que o necessário) só
+      // porque sua data técnica de financiamento caiu nos próximos 20 dias —
+      // ela não tem prazo real a cumprir, então não é uma "conta próxima".
+      // Isso não impede o pagamento dela (Passo 4 continua pagando assim que
+      // o caixa livre permitir); só evita que o motor retenha caixa extra
+      // de forma antecipada e desproporcional por causa dela.
       const upcomingExpenses20d = scheduledPendingExpenses
-        .filter((item) => !item.deducted && !item.unfundable)
+        .filter((item) => !item.deducted && !item.unfundable && hasFixedDueDate(item))
         .filter((item) => {
           const d = diffInDays(dateOnDay, item.scheduledDate);
           return d >= 0 && d <= 20;
@@ -707,17 +820,30 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       }
 
       // 4b. Despesas pendentes.
-      for (const item of scheduledPendingExpenses) {
+      // A data agendada é uma ação única. Se ela cair em HOJE, o roadmap
+      // mostra a pendência, mas não pode projetar a mesma dívida para amanhã
+      // dentro da mesma simulação. Ela só será executada quando HOJE for
+      // efetivamente concluído. No próximo recálculo, o próprio `today` muda
+      // e a pendência é reagendada para a nova data.
+      if (roadmapActionRealized) for (const item of scheduledPendingExpenses) {
         if (item.deducted || item.unfundable) continue;
 
         const exp = item.expense;
-        const dueReached = exp.dueDate ? exp.dueDate <= dateOnDay : false;
         const scheduleReached = dateOnDay >= item.scheduledDate;
-        if (!scheduleReached && !dueReached) continue;
+
+        // O dia atual é uma prévia, não uma execução. Não deixe a dívida
+        // "escapar" para o primeiro dia futuro da simulação.
+        if (item.scheduledDate === today && !completedRoadmapDays.has(today)) continue;
+
+        if (!scheduleReached) continue;
 
         item.daysWaiting += 1;
 
-        // Quitação pelo saldo disponível em banco
+        // Quitação pelo saldo disponível em banco. Despesas sem vencimento
+        // (Tier 3 — a menor prioridade de `getExpenseUrgencyTier`) já entram
+        // por último na fila natural de caixa livre, então pagá-las assim
+        // que o saldo permite tem custo proporcional e mínimo — não é mais
+        // adiado até a meta ser batida (ver nota da Prioridade Meta acima).
         if (bankBalance + 0.005 >= exp.amount) {
           payExpense(exp);
           item.deducted = true;
@@ -809,7 +935,14 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       });
 
     let reservedCashForPending = 0;
-    const remainingPending = scheduledPendingExpenses.filter((i) => !i.deducted && !i.unfundable);
+    // CORREÇÃO (Prioridade Meta): uma despesa sem vencimento fixo não tem
+    // prazo real, então não deve reservar caixa "de antemão" como se fosse
+    // uma conta próxima — isso reteria caixa do reinvestimento sem motivo
+    // (o pagamento em si continua acontecendo normalmente no Passo 4, assim
+    // que o caixa livre permitir).
+    const remainingPending = scheduledPendingExpenses.filter(
+      (i) => !i.deducted && !i.unfundable && hasFixedDueDate(i)
+    );
     const urgentPendingList = remainingPending.filter(
       (item) => diffInDays(dateOnDay, item.scheduledDate) <= 15
     );
@@ -1016,6 +1149,27 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       const spent = unitPrice * units;
       const addedDaily = spent * (dailyPercentage / 100);
 
+      // Prévia do dia atual: registra a ação planejada, mas não altera o estado
+      // financeiro. A confirmação do usuário recalcula o roadmap e materializa
+      // o produto de verdade no App.
+      if (!roadmapActionRealized) {
+        projectedAcquisitions.push({
+          id: `planned_d${day}_${templateId}`,
+          name,
+          day,
+          date: dateOnDay,
+          dateFormatted,
+          unitPrice,
+          units,
+          totalSpent: spent,
+          dailyYieldAdded: addedDaily,
+          dailyPercentage,
+          durationDays,
+          returnCapitalAtEnd,
+        });
+        return;
+      }
+
       currentFreeCash -= spent;
       bankBalance = Math.max(0, bankBalance - spent);
       deficitRemaining = Math.max(0, deficitRemaining - addedDaily);
@@ -1092,7 +1246,13 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       activeCount > minPossibleContracts &&
       missingOptimalTemplates.some((t) => t.investedAmount <= currentFreeCash);
 
-    if (currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
+    // Ações de aporte/reinvestimento em dias já vencidos só entram na carteira
+    // quando aquele dia foi efetivamente concluído. No dia de hoje, porém,
+    // ainda precisamos exibir a ação planejada para que o botão "Marcar Concluído"
+    // consiga executá-la; ela é apenas uma prévia e não altera contratos, caixa
+    // nem rendimento até a confirmação.
+    const previewTodayAction = !roadmapActionRealized && dateOnDay === today;
+    if ((roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
       for (let pass = 0; pass < 40; pass++) {
         const canConsolidateNow = hasMissingOptimalToBuy();
         if (deficitRemaining <= 0.001 && !canConsolidateNow) break;
@@ -1175,6 +1335,9 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           chosen.returnCapitalAtEnd ?? false,
           chosen.id
         );
+
+        // Uma prévia representa uma única ação pendente do dia atual.
+        if (previewTodayAction) break;
       }
 
       // Cota base como último recurso.
@@ -1378,11 +1541,43 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     const rec = dayRecords.find((r) => r.day === day);
     if (!rec) return null;
 
+    const pendingAcquisitionsToday: RoadmapContractSnapshot[] = projectedAcquisitions
+      .filter((acq) => acq.day === day && !canRealizeRoadmapAction(acq.date))
+      .map((acq) => ({
+        id: acq.id,
+        name: acq.name,
+        investedAmount: acq.totalSpent,
+        unitPrice: acq.unitPrice,
+        units: acq.units,
+        dailyPercentage: acq.dailyPercentage,
+        dailyYield: acq.dailyYieldAdded,
+        durationDays: acq.durationDays,
+        startDateFormatted: acq.dateFormatted,
+        endDateFormatted: formatDateBR(addDays(acq.date, acq.durationDays)),
+        startDay: acq.day,
+        endDay: acq.day + acq.durationDays,
+        daysRemaining: acq.durationDays,
+        returnCapitalAtEnd: acq.returnCapitalAtEnd,
+        isReinvestment: true,
+        isNewInvestment: true,
+        isInitialPortfolio: false,
+        isAcquiredToday: false,
+        acquisitionDay: acq.day,
+      }));
+
+    const acquisitionsToday = [
+      ...contracts
+        .filter((c) => c.startDay === day && !c.isInitialPortfolio)
+        .map((c) => toSnapshot(c, day)),
+      ...pendingAcquisitionsToday,
+    ];
+
     return {
       day: rec.day,
       date: rec.date,
       dateFormatted: rec.dateFormatted,
       isStartDate: isCustomStartPoint ? rec.date === baseStartDate : rec.day === 0,
+      isToday: rec.date === today,
       isOptimizationPhase: rec.isOptimizationPhase,
       isOptimizedState: rec.isOptimizedState,
       dailyYield: rec.dailyGross,
@@ -1421,15 +1616,9 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       activeContracts: contracts
         .filter((c) => day >= c.startDay && day < c.endDay)
         .map((c) => toSnapshot(c, day)),
-      acquisitionsToday: contracts
-        .filter((c) => c.startDay === day && !c.isInitialPortfolio)
-        .map((c) => toSnapshot(c, day)),
-      newPurchasesToday: contracts
-        .filter((c) => c.startDay === day && !c.isInitialPortfolio)
-        .map((c) => toSnapshot(c, day)),
-      newInvestmentsToday: contracts
-        .filter((c) => c.startDay === day && !c.isInitialPortfolio)
-        .map((c) => toSnapshot(c, day)),
+      acquisitionsToday,
+      newPurchasesToday: acquisitionsToday,
+      newInvestmentsToday: acquisitionsToday,
       newInvestmentsUpToDay: contracts
         .filter((c) => c.startDay <= day && (c.isNewInvestment || !c.isInitialPortfolio))
         .map((c) => toSnapshot(c, day)),
@@ -1442,9 +1631,42 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       expiredTodayContracts: contracts
         .filter((c) => c.endDay === day)
         .map((c) => toSnapshot(c, day)),
-      expensesTodayList: rec.expenseIdsToday
-        .map((id) => expenseById.get(id))
-        .filter((e): e is Expense => Boolean(e)),
+      expensesTodayList: (() => {
+        const paidOrDeducted = rec.expenseIdsToday
+          .map((id) => expenseById.get(id))
+          .filter((e): e is Expense => Boolean(e));
+        // `scheduledPendingExpenses` é mutável durante a simulação e pode
+        // terminar com `deducted=true` porque a despesa foi paga alguns dias
+        // depois. Os detalhes de um dia histórico, porém, precisam continuar
+        // mostrando a ação que estava planejada naquela data. Por isso, aqui
+        // usamos a data programada como fonte histórica e deixamos o Map por ID
+        // eliminar a duplicação quando o pagamento também ocorreu no mesmo dia.
+        const pendingForThisDate = scheduledPendingExpenses
+          .filter((item) => !item.unfundable && item.scheduledDate === rec.date)
+          .map((item) => item.expense);
+
+        // O vencimento original também faz parte do histórico do roadmap.
+        // Assim, se uma conta venceu em 21/09 e foi reagendada para 22/09,
+        // o detalhe de 21/09 continua mostrando a dívida como vencida, sem
+        // duplicá-la em 23/09. A execução continua vinculada somente à data
+        // agendada/concluída.
+        const overdueOnOriginalDueDate = scheduledPendingExpenses
+          .filter((item) => {
+            if (item.unfundable) return false;
+            const dueDate = item.expense.dueDate?.trim().split('T')[0];
+            return Boolean(
+              dueDate &&
+              dueDate === rec.date &&
+              dueDate < today &&
+              item.scheduledDate > dueDate
+            );
+          })
+          .map((item) => item.expense);
+
+        const byId = new Map<string, Expense>();
+        [...paidOrDeducted, ...overdueOnOriginalDueDate, ...pendingForThisDate].forEach((expense) => byId.set(expense.id, expense));
+        return Array.from(byId.values());
+      })(),
     };
   };
 
@@ -1470,6 +1692,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     isOptimizationPhase: rec.isOptimizationPhase,
     isOptimizedState: rec.isOptimizedState,
     isStartDate: isCustomStartPoint ? rec.date === baseStartDate : rec.day === 0,
+    isToday: rec.date === today,
     bankBalance: rec.bankBalance,
     platformBalance: rec.platformBalance,
     cashBalance: rec.cashBalance,

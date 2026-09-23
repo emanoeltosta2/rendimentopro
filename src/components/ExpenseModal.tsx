@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Receipt, TrendingDown, Layers, Clock } from 'lucide-react';
 import { Expense } from '../types/investment';
 import { getTodayString, addMonths, formatDateBR, formatCurrency } from '../utils/calculations';
+import { createId } from '../utils/id';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -85,7 +86,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     if (numAmount <= 0) return;
 
     if (isInstallment && !expenseToEdit && numInstallments >= 2) {
-      const groupId = `exp-grp-${Date.now()}`;
+      const groupId = createId('exp-grp');
       const generatedExpenses: Expense[] = [];
       const baseDueDate = dueDate || getTodayString();
 
@@ -94,7 +95,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       for (let i = 1; i <= numInstallments; i++) {
         const installmentDueDate = addMonths(baseDueDate, i - 1);
         generatedExpenses.push({
-          id: `exp-${Date.now()}-${i}`,
+          id: createId('exp'),
           title: `${title.trim()} (${i}/${numInstallments})`,
           amount: perInstallmentValue,
           dueDate: installmentDueDate,
@@ -114,7 +115,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     } else {
       const effectiveDueDate = hasDueDate ? (dueDate || getTodayString()) : undefined;
       const expense: Expense = {
-        id: expenseToEdit?.id || `exp-${Date.now()}`,
+        id: expenseToEdit?.id || createId('exp'),
         title: title.trim(),
         amount: Math.max(0.01, numAmount),
         dueDate: effectiveDueDate,

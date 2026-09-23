@@ -78,9 +78,9 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
 
   if (isLoading) {
     return (
-      <div className="bg-slate-50 border-b border-slate-200 py-1.5 px-4 text-xs text-slate-500 flex items-center justify-between">
+      <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-1.5 px-4 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
         <span className="flex items-center gap-2">
-          <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
+          <RefreshCw className="h-3 w-3 animate-spin text-slate-400 dark:text-slate-500" />
           Verificando sincronização na nuvem...
         </span>
       </div>
@@ -92,14 +92,14 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
       {/* CORREÇÃO: falhas de gravação só apareciam no console; a barra
           continuava exibindo "sincronizado" com tudo falhando. */}
       {syncError && (
-        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2">
-          <div className="max-w-7xl mx-auto flex items-center gap-2 text-rose-900">
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+        <div className="bg-rose-50 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-900 px-4 py-2">
+          <div className="max-w-7xl mx-auto flex items-center gap-2 text-rose-900 dark:text-rose-200">
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
             <span className="text-xs sm:text-sm flex-1">{syncError}</span>
             {onManualSync && (
               <button
                 onClick={onManualSync}
-                className="text-xs font-semibold px-2.5 py-1 rounded-md bg-rose-600 text-white hover:bg-rose-700"
+                className="text-xs font-semibold px-2.5 py-1 rounded-md bg-rose-600 dark:bg-rose-700 text-white hover:bg-rose-700 dark:hover:bg-rose-600"
               >
                 Tentar de novo
               </button>
@@ -108,7 +108,7 @@ export const CloudSyncBar: React.FC<CloudSyncBarProps> = ({
               <button
                 onClick={onDismissError}
                 aria-label="Dispensar aviso de sincronização"
-                className="text-xs font-medium px-2 py-1 rounded-md text-rose-700 hover:bg-rose-100"
+                className="text-xs font-medium px-2 py-1 rounded-md text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60"
               >
                 Dispensar
               </button>

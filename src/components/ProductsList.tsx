@@ -24,6 +24,7 @@ import {
   isProductActiveOnDate,
   formatPercentBR,
 } from '../utils/calculations';
+import { createId } from '../utils/id';
 
 interface ProductsListProps {
   products: InvestmentProduct[];
@@ -427,7 +428,7 @@ export const ProductsList: React.FC<ProductsListProps> = ({
                       <button
                         onClick={() => {
                           const tpl: ProductTemplate = {
-                            id: `tpl-${Date.now()}`,
+                            id: createId('tpl'),
                             name: product.name,
                             investedAmount: product.investedAmount,
                             returnAmount: product.returnAmount,
@@ -453,7 +454,7 @@ export const ProductsList: React.FC<ProductsListProps> = ({
                       <button
                         onClick={() => {
                           const tpl: ProductTemplate = {
-                            id: `tpl-${Date.now()}`,
+                            id: createId('tpl'),
                             name: product.name,
                             investedAmount: product.investedAmount,
                             returnAmount: product.returnAmount,

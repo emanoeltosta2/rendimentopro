@@ -28,20 +28,18 @@ import {
   deduplicateTemplates
 } from './utils/storage';
 import { getTodayString, isProductActiveOnDate, normalizeSettings } from './utils/calculations';
+import { createId } from './utils/id';
 import { useAuth } from './services/AuthContext';
 import { firestoreSync } from './services/firestoreSync';
 
 /**
  * CORREÇÃO: `prod-${Date.now()}` colide em duplicações rápidas (mesmo
  * milissegundo), gerando dois registros com o mesmo id.
+ *
+ * Movido para `src/utils/id.ts` para ser reaproveitado por todos os
+ * componentes que criam produtos, despesas e templates (antes cada um
+ * implementava sua própria versão colisível de geração de id).
  */
-function createId(prefix: string): string {
-  const rand =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2, 10);
-  return `${prefix}-${Date.now().toString(36)}-${rand}`;
-}
 
 export default function App() {
   const { user } = useAuth();
@@ -481,7 +479,12 @@ export default function App() {
           const idsToPay = new Set(expensesToPay.map((e) => e.id));
           return prev.map((e) => {
             if (idsToPay.has(e.id)) {
-              const updated = { ...e, isPaid: true, paidDate: date };
+              const updated = {
+                ...e,
+                isPaid: true,
+                paidDate: date,
+                roadmapPaidDate: date,
+              };
               if (user) {
                 trackWrite(firestoreSync.saveExpense(user.uid, updated));
               }
@@ -506,6 +509,8 @@ export default function App() {
           returnCapitalAtEnd: acq.returnCapitalAtEnd ?? false,
           category: 'Reinvestimento do Roadmap',
           notes: `Adquirido via conclusão do Roadmap no Dia ${details.day} (${details.dateFormatted})`,
+          roadmapAcquisitionDate: date,
+          roadmapAcquisitionDay: details.day,
         }));
 
         setProducts((prev) => [...newProducts, ...prev]);
@@ -532,14 +537,68 @@ export default function App() {
   const handleUndoCompleteRoadmapDay = useCallback(
     (date: string) => {
       const currentCompleted = settings.completedRoadmapDays || [];
-      if (currentCompleted.includes(date)) {
-        persistSettings({
-          ...settings,
-          completedRoadmapDays: currentCompleted.filter((d) => d !== date),
-        });
+
+      if (!currentCompleted.includes(date)) return;
+
+      // Desmarcar um dia precisa desfazer também os efeitos reais que foram
+      // aplicados quando ele foi concluído. Caso contrário o marcador mudaria,
+      // mas o produto continuaria rendendo e a dívida continuaria como paga.
+      const productsToRollback = products.filter((p) =>
+        p.roadmapAcquisitionDate === date ||
+        (p.category === 'Reinvestimento do Roadmap' &&
+          typeof p.notes === 'string' &&
+          p.notes.includes(`(${date.split('-').reverse().join('/')})`))
+      );
+
+      if (productsToRollback.length > 0) {
+        const rollbackIds = new Set(productsToRollback.map((p) => p.id));
+        setProducts((prev) => prev.filter((p) => !rollbackIds.has(p.id)));
+
+        if (user) {
+          for (const product of productsToRollback) {
+            trackWrite(firestoreSync.deleteProduct(user.uid, product.id));
+          }
+        }
       }
+
+      // Só desfazemos despesas que foram efetivamente quitadas por este
+      // dia do Roadmap. O campo roadmapPaidDate é persistido no Firestore;
+      // portanto a regra continua funcionando mesmo depois de um snapshot
+      // da nuvem substituir o estado local. Nunca desfazemos uma quitação
+      // manual feita pelo usuário.
+      const expensesToRollback = expenses.filter(
+        (e) => e.roadmapPaidDate === date && e.paidDate === date
+      );
+
+      if (expensesToRollback.length > 0) {
+        const rollbackIds = new Set(expensesToRollback.map((e) => e.id));
+        const restoredExpenses = expensesToRollback.map((expense) => ({
+          ...expense,
+          isPaid: false,
+          paidDate: undefined,
+          roadmapPaidDate: undefined,
+        }));
+
+        setExpenses((prev) =>
+          prev.map((e) => {
+            const restored = restoredExpenses.find((candidate) => candidate.id === e.id);
+            return restored && rollbackIds.has(e.id) ? restored : e;
+          })
+        );
+
+        if (user) {
+          for (const restored of restoredExpenses) {
+            trackWrite(firestoreSync.saveExpense(user.uid, restored));
+          }
+        }
+      }
+
+      persistSettings({
+        ...settings,
+        completedRoadmapDays: currentCompleted.filter((d) => d !== date),
+      });
     },
-    [settings, persistSettings]
+    [settings, products, expenses, user, trackWrite, persistSettings]
   );
 
   const handleQuickCreateProduct = (partialProduct: Partial<InvestmentProduct>) => {
@@ -641,6 +700,7 @@ export default function App() {
             onSetRoadmapStartDate={handleSetRoadmapStartDate}
             onCompleteRoadmapDay={handleCompleteRoadmapDay}
             onUndoCompleteRoadmapDay={handleUndoCompleteRoadmapDay}
+          onUpdateSettings={persistSettings}
           />
         )}
 

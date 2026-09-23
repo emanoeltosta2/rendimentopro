@@ -59,6 +59,16 @@ export function normalizeSettings(raw: Partial<PlatformSettings> | null | undefi
       s.protectionProfile === 'conservative' || s.protectionProfile === 'aggressive'
         ? s.protectionProfile
         : 'balanced',
+    manualBankInjection: Math.max(0, toFiniteNumber(s.manualBankInjection, 0)),
+    manualBankInjectionDate:
+      typeof s.manualBankInjectionDate === 'string' && s.manualBankInjectionDate.trim()
+        ? s.manualBankInjectionDate.trim().split('T')[0]
+        : undefined,
+    manualProtectionInjection: Math.max(0, toFiniteNumber(s.manualProtectionInjection, 0)),
+    manualProtectionInjectionDate:
+      typeof s.manualProtectionInjectionDate === 'string' && s.manualProtectionInjectionDate.trim()
+        ? s.manualProtectionInjectionDate.trim().split('T')[0]
+        : undefined,
     completedRoadmapDays: Array.isArray(s.completedRoadmapDays)
       ? s.completedRoadmapDays.filter((d): d is string => typeof d === 'string' && Boolean(d.trim()))
       : [],
@@ -342,10 +352,15 @@ export function generateDayProjections(
 // Não sugerir nem antecipar saques de contas que faltem mais de 15 dias para o vencimento.
 // O dinheiro deve continuar investido na plataforma gerando rendimentos diários para encurtar o prazo da meta!
 // Tier 1: Vencimento Iminente / Atrasado (vence em até 15 dias ou com janela de acúmulo no limite)
-// Tier 2: Despesas Imediatas / Sem Data Fixa (gastos do dia a dia, compras ou pendências a liquidar já)
-//         Prioriza menores valores (Snowball) para desocupar fluxo com poucos dias de rendimento
-// Tier 3: Faturas Futuras (> 15 dias, ex: empréstimos ou contas que vencem daqui a semanas ou meses)
+// Tier 2: Faturas Futuras (> 15 dias, ex: empréstimos ou contas que vencem daqui a semanas ou meses)
 //         Não bloqueiam nem sequestram o caixa atual; o pagamento é programado estritamente para a janela ideal (<= 15 dias antes)
+// Tier 3: Despesas Sem Data Fixa (flexíveis, sem prazo legal a cumprir)
+//         CORREÇÃO (Prioridade Meta): ficam por ÚLTIMO, depois até das faturas
+//         futuras com data real — o Roadmap completo (roadmap.ts) só as quita
+//         depois que a Meta Diária Principal é conquistada, então elas nunca
+//         devem furar a fila de contas com vencimento de verdade nem reservar
+//         caixa de curto prazo que pertenceria ao reinvestimento.
+//         Dentro do Tier, prioriza menores valores primeiro (Snowball).
 export function getExpenseUrgencyTier(
   expense: Expense,
   todayStr: string = getTodayString(),
@@ -354,9 +369,7 @@ export function getExpenseUrgencyTier(
   const hasDueDate = Boolean(expense.dueDate && expense.dueDate.trim());
   
   if (!hasDueDate) {
-    // Despesas sem vencimento fixo: despesas correntes/imediatas (Tier 2).
-    // Devem ser pagas logo após contas com vencimento iminente, priorizando valores menores (Snowball).
-    return { tier: 2, sortKey: expense.amount };
+    return { tier: 3, sortKey: expense.amount };
   }
 
   const daysUntilDue = diffInDays(todayStr, expense.dueDate!);
@@ -368,9 +381,9 @@ export function getExpenseUrgencyTier(
     return { tier: 1, sortKey: daysUntilDue };
   }
 
-  // Tier 3: Faturas com vencimento a mais de 15 dias (> 15 dias)
+  // Tier 2: Faturas com vencimento a mais de 15 dias (> 15 dias)
   // Possuem folga confortável e seu pagamento não deve ser antecipado prematuramente para preservar juros compostos
-  return { tier: 3, sortKey: daysUntilDue };
+  return { tier: 2, sortKey: daysUntilDue };
 }
 
 // Ordenação Inteligente de Despesas por Prioridade Financeira Real
@@ -402,15 +415,15 @@ export function sortExpensesBySmartPriority(
       return a.amount - b.amount;
     }
 
-    if (aUrgency.tier === 2) {
-      // No Tier 2 (Despesas imediatas sem data fixa): Menor valor primeiro (Snowball)
+    if (aUrgency.tier === 3) {
+      // No Tier 3 (sem vencimento fixo / flexíveis): Menor valor primeiro (Snowball)
       if (Math.abs(a.amount - b.amount) > 0.01) {
         return a.amount - b.amount;
       }
       return a.title.localeCompare(b.title);
     }
 
-    // No Tier 3 (Faturas > 15 dias): Quem vence mais cedo dentro do horizonte futuro
+    // No Tier 2 (Faturas > 15 dias): Quem vence mais cedo dentro do horizonte futuro
     if (aUrgency.sortKey !== bUrgency.sortKey) {
       return aUrgency.sortKey - bUrgency.sortKey;
     }
@@ -616,22 +629,50 @@ export function calculateAllExpensesOptimizations(
           }
         }
       } else {
-        // Despesa sem data de vencimento fixa (gastos correntes imediatos)
+        // Despesa sem data de vencimento fixa (flexível / sem prazo legal)
         isFeasible = true;
         bestDate = dateFunding > todayStr ? dateFunding : todayStr;
         safetyLevel = 'safe';
-        earlyPaymentBenefit = `Gasto imediato / sem data de vencimento fixa. Saldo em caixa estará 100% liberado para saque em ${formatDateBR(bestDate)}.`;
-        riskMitigationTip = `Consome ${plural(goalDelayDays, 'dia', 'dias', 1)} de rendimentos líquidos, liquidando despesas ágeis sem comprometer contas de vencimento iminente.`;
-        reasoning = `Gasto imediato de ${formatCurrency(expense.amount)} (sem vencimento fixo). Priorizado para quitação ágil em ${formatDateBR(bestDate)} (+ taxa de saque de ${formatCurrency(withdrawalFee)}) via rendimentos diários, eliminando pendências correntes sem bloquear capital desnecessariamente.`;
+        // CORREÇÃO (Prioridade Meta — revisada): uma despesa sem vencimento
+        // não deve ficar represada até a meta ser batida (isso penalizava
+        // até contas pequenas e totalmente pagáveis, com impacto real
+        // mínimo). Ela também não deve furar a fila de contas com data real
+        // nem acionar proteção antecipada (blindagem/reserva de caixa) só
+        // por existir. O equilíbrio correto: prioridade mais baixa da fila
+        // (Tier 3 em `getExpenseUrgencyTier`), paga assim que há caixa livre
+        // — ou seja, exatamente na data abaixo — com um custo proporcional e
+        // pequeno, estimado em `goalDelayDays`.
+        earlyPaymentBenefit = `Sem vencimento fixo: o caixa fica disponível a partir de ${formatDateBR(bestDate)} — é o dia recomendado para liquidar, com o menor impacto possível no cronograma (ela não disputa espaço com contas que têm prazo real).`;
+        riskMitigationTip = `Prioridade mais baixa da fila: por não ter vencimento, só usa o caixa que sobra depois das contas com data real. Impacto estimado na meta: ~${plural(goalDelayDays, 'dia', 'dias', 1)} de rendimento.`;
+        reasoning = `Despesa de ${formatCurrency(expense.amount)} sem vencimento fixo (+ taxa de saque de ${formatCurrency(withdrawalFee)}). Como não há prazo a cumprir, entra com a menor prioridade da fila e é paga assim que há caixa livre em ${formatDateBR(bestDate)}, sem represar reinvestimento por antecipação nem furar a fila de contas reais.`;
       }
     } else {
-      // Não acumula no horizonte de 365 dias
+      // Não acumula no horizonte de 365 dias com o rendimento ATUAL dos contratos já cadastrados
       safetyLevel = 'insufficient';
       isFeasible = false;
       deficit = requiredAmountWithFee;
       bestDate = expense.dueDate || addDays(todayStr, 30);
-      reasoning = `Seus rendimentos diários atuais não são suficientes para acumular ${formatCurrency(requiredAmountWithFee)} dentro do horizonte projetado.`;
-      riskMitigationTip = `Adicione novos aportes ou complemente o valor externamente.`;
+
+      // CORREÇÃO (Mensagem Heurística): esta projeção soma apenas o rendimento
+      // FIXO dos contratos já cadastrados hoje — ela não simula o crescimento
+      // composto do reinvestimento (isso só o motor completo do Roadmap faz).
+      // Por isso, quando a própria meta diária configurada pelo usuário já
+      // cobriria o valor num prazo razoável, a mensagem deixa essa capacidade
+      // de médio prazo explícita em vez de afirmar, sem nuance, que "os
+      // rendimentos não são suficientes".
+      const targetDailyNet = safeSettings.dailyGoalAmount * (1 - feeRate);
+      const daysAtGoalPace =
+        targetDailyNet > 0 ? Math.ceil(requiredAmountWithFee / targetDailyNet) : Infinity;
+      const goalPaceHasHeadroom =
+        targetDailyNet > currentDailyNet && Number.isFinite(daysAtGoalPace) && daysAtGoalPace <= totalHorizonDays;
+
+      if (goalPaceHasHeadroom) {
+        reasoning = `Com o rendimento diário ATUAL de ${formatCurrency(currentDailyGross)}/dia (apenas contratos já cadastrados), este valor não acumula dentro de ${plural(totalHorizonDays, 'dia', 'dias')} — mas esta projeção não inclui o crescimento do reinvestimento. Ao atingir a meta diária de ${formatCurrency(safeSettings.dailyGoalAmount)}/dia configurada, o valor ficaria coberto em cerca de ${plural(daysAtGoalPace, 'dia', 'dias')} de rendimento; acompanhe o Roadmap para a data real, que tende a ser bem mais rápida graças aos juros compostos.`;
+        riskMitigationTip = `Consulte o Roadmap de Reinvestimento: ele já projeta o crescimento composto e deve indicar um prazo mais curto do que esta estimativa linear.`;
+      } else {
+        reasoning = `Seus rendimentos diários atuais (considerando apenas contratos já cadastrados, sem novos aportes) não são suficientes para acumular ${formatCurrency(requiredAmountWithFee)} dentro do horizonte projetado de ${plural(totalHorizonDays, 'dia', 'dias')}.`;
+        riskMitigationTip = `Adicione novos aportes ou complemente o valor externamente.`;
+      }
     }
 
     const daysBeforeDue = hasFixedDue && expense.dueDate ? Math.max(0, diffInDays(bestDate, expense.dueDate)) : 0;

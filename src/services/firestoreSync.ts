@@ -58,6 +58,11 @@ function buildProductPayload(userId: string, product: InvestmentProduct): Record
     notes: product.notes || '',
     isReinvestment: product.isReinvestment === true,
     isNewInvestment: product.isNewInvestment === true,
+    // Metadados de efeitos aplicados pelo Roadmap precisam sobreviver ao
+    // round-trip Firestore para que 'Desfazer Conclusão' consiga localizar
+    // exatamente os registros criados/alterados por aquele dia.
+    roadmapAcquisitionDate: product.roadmapAcquisitionDate ?? null,
+    roadmapAcquisitionDay: product.roadmapAcquisitionDay ?? null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -80,6 +85,9 @@ function buildExpensePayload(userId: string, expense: Expense): Record<string, u
     category: expense.category,
     isPaid: Boolean(expense.isPaid),
     paidDate: expense.paidDate ? String(expense.paidDate).trim() : null,
+    // Marca de auditoria: diferencia uma quitação manual de uma quitação
+    // efetivada pela conclusão de um dia do Roadmap.
+    roadmapPaidDate: expense.roadmapPaidDate ? String(expense.roadmapPaidDate).trim() : null,
     deductFromRoadmap: expense.deductFromRoadmap ?? true,
     notes: expense.notes ? String(expense.notes).trim() : '',
     installmentGroupId: expense.installmentGroupId ?? null,
@@ -123,6 +131,10 @@ function buildSettingsPayload(
     goalCycleStartDate: s.goalCycleStartDate ?? null,
     dynamicBufferEnabled: s.dynamicBufferEnabled !== false,
     protectionProfile: s.protectionProfile ?? 'balanced',
+    manualBankInjection: s.manualBankInjection ?? 0,
+    manualBankInjectionDate: s.manualBankInjectionDate ?? null,
+    manualProtectionInjection: s.manualProtectionInjection ?? 0,
+    manualProtectionInjectionDate: s.manualProtectionInjectionDate ?? null,
     completedRoadmapDays: s.completedRoadmapDays ?? [],
     updatedAt: new Date().toISOString(),
   };
@@ -218,6 +230,10 @@ export const firestoreSync = {
             // roadmap reclassificar contratos por match textual no nome.
             isReinvestment: d.isReinvestment === true,
             isNewInvestment: d.isNewInvestment === true,
+            roadmapAcquisitionDate: typeof d.roadmapAcquisitionDate === 'string' && d.roadmapAcquisitionDate.trim()
+              ? d.roadmapAcquisitionDate.trim()
+              : undefined,
+            roadmapAcquisitionDay: d.roadmapAcquisitionDay != null ? num(d.roadmapAcquisitionDay, 0) : undefined,
           });
         });
         onSuccess(list);
@@ -255,6 +271,9 @@ export const firestoreSync = {
             category: d.category || 'Outros',
             isPaid: Boolean(d.isPaid),
             paidDate: d.paidDate || undefined,
+            roadmapPaidDate: typeof d.roadmapPaidDate === 'string' && d.roadmapPaidDate.trim()
+              ? d.roadmapPaidDate.trim()
+              : undefined,
             deductFromRoadmap: d.deductFromRoadmap !== undefined ? Boolean(d.deductFromRoadmap) : true,
             notes: d.notes || '',
             installmentGroupId: d.installmentGroupId || undefined,
@@ -301,6 +320,10 @@ export const firestoreSync = {
                 : undefined,
             dynamicBufferEnabled: d.dynamicBufferEnabled !== false,
             protectionProfile: d.protectionProfile,
+            manualBankInjection: num(d.manualBankInjection, 0),
+            manualBankInjectionDate: typeof d.manualBankInjectionDate === 'string' && d.manualBankInjectionDate.trim() ? d.manualBankInjectionDate.trim() : undefined,
+            manualProtectionInjection: num(d.manualProtectionInjection, 0),
+            manualProtectionInjectionDate: typeof d.manualProtectionInjectionDate === 'string' && d.manualProtectionInjectionDate.trim() ? d.manualProtectionInjectionDate.trim() : undefined,
             completedRoadmapDays: Array.isArray(d.completedRoadmapDays) ? d.completedRoadmapDays : [],
           })
         );

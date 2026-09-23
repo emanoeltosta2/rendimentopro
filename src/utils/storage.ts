@@ -16,6 +16,10 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   reinvestmentBufferPercentage: 20, // 20% reservado para reinvestimento
   dynamicBufferEnabled: true, // Buffer de Reinvestimento Protegido Dinâmico ativado
   protectionProfile: 'balanced', // Perfil de proteção equilibrado
+  manualBankInjection: 0, // Aporte externo livre
+  manualBankInjectionDate: undefined,
+  manualProtectionInjection: 0, // Aporte externo para a blindagem
+  manualProtectionInjectionDate: undefined,
 };
 
 export const DEFAULT_PRODUCT_TEMPLATES: ProductTemplate[] = [

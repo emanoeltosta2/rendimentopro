@@ -21,6 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
   MoveHorizontal,
+  Wallet,
 } from 'lucide-react';
 import {
   InvestmentProduct,
@@ -39,9 +40,10 @@ import {
 const EMPTY_EXPENSES: Expense[] = [];
 const EMPTY_TEMPLATES: ProductTemplate[] = [];
 import { calculatePortfolioRoadmap } from '../utils/roadmap';
-import { formatCurrency, formatNumberBR, formatPercentBR, formatDateBR } from '../utils/calculations';
+import { formatCurrency, formatNumberBR, formatPercentBR, formatDateBR, getTodayString } from '../utils/calculations';
 import { RoadmapDayDetailsModal } from './RoadmapDayDetailsModal';
 import { ResetGoalCycleModal } from './ResetGoalCycleModal';
+import { BalanceAdjustmentModal } from './BalanceAdjustmentModal';
 
 interface PortfolioRoadmapCardProps {
   products: InvestmentProduct[];
@@ -54,6 +56,7 @@ interface PortfolioRoadmapCardProps {
   onSetRoadmapStartDate?: (startDate: string | undefined) => void;
   onCompleteRoadmapDay?: (details: RoadmapPointDetails) => void;
   onUndoCompleteRoadmapDay?: (date: string) => void;
+  onUpdateSettings?: (settings: PlatformSettings) => void;
 }
 
 export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
@@ -67,6 +70,7 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
   onSetRoadmapStartDate,
   onCompleteRoadmapDay,
   onUndoCompleteRoadmapDay,
+  onUpdateSettings,
 }) => {
   const [horizonOption, setHorizonOption] = useState<'goal' | '30' | '60' | '90' | '180'>('goal');
   const [includeExpenses, setIncludeExpenses] = useState<boolean>(true);
@@ -74,6 +78,7 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
   const [isExpandedScroll, setIsExpandedScroll] = useState<boolean>(true);
   const [selectedPointDetails, setSelectedPointDetails] = useState<RoadmapPointDetails | null>(null);
   const [isResetGoalModalOpen, setIsResetGoalModalOpen] = useState<boolean>(false);
+  const [isBalanceAdjustmentOpen, setIsBalanceAdjustmentOpen] = useState<boolean>(false);
   const [milestonesPage, setMilestonesPage] = useState<number>(0);
   const [groupByDay, setGroupByDay] = useState<boolean>(true);
   const [roadmapViewTab, setRoadmapViewTab] = useState<'timeline' | 'acquisitions'>('timeline');
@@ -168,6 +173,8 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
         entry.totalWithdrawals += m.amount || 0;
         entry.totalExpensesToPay += (m.expenseAmount ?? m.amount ?? 0);
         entry.totalWithdrawalFees += (m.feeAmount ?? 0);
+      } else if (m.type === 'expense_rescheduled') {
+        entry.totalExpensesToPay += (m.expenseAmount ?? 0);
       } else if (m.type === 'new_investment') {
         entry.totalNewInvestments += m.amount || 0;
       } else if (m.type === 'reinvestment' || m.type === 'goal_maintenance') {
@@ -183,12 +190,14 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
         entry.primaryType = 'optimization_completed';
       } else if (m.type === 'optimization_start' && entry.primaryType !== 'goal_reached' && entry.primaryType !== 'optimization_completed') {
         entry.primaryType = 'optimization_start';
-      } else if (m.type === 'capital_protection' && entry.primaryType !== 'goal_reached' && !entry.primaryType?.startsWith('optimization')) {
+      } else if ((m.type === 'expense_withdrawal' || m.type === 'expense_rescheduled') && entry.primaryType !== 'goal_reached' && !entry.primaryType?.startsWith('optimization')) {
+        // Uma dívida pendente/realocada precisa continuar visível mesmo quando
+        // o mesmo dia também contém proteção ou novos investimentos.
+        entry.primaryType = m.type === 'expense_rescheduled' ? 'expense_rescheduled' : 'expense_withdrawal';
+      } else if (m.type === 'capital_protection' && entry.primaryType !== 'goal_reached' && !entry.primaryType?.startsWith('optimization') && entry.primaryType !== 'expense_withdrawal' && entry.primaryType !== 'expense_rescheduled') {
         entry.primaryType = 'capital_protection';
-      } else if (m.type === 'new_investment' && entry.primaryType !== 'goal_reached' && !entry.primaryType?.startsWith('optimization') && entry.primaryType !== 'capital_protection') {
+      } else if (m.type === 'new_investment' && entry.primaryType !== 'goal_reached' && !entry.primaryType?.startsWith('optimization') && entry.primaryType !== 'capital_protection' && entry.primaryType !== 'expense_withdrawal' && entry.primaryType !== 'expense_rescheduled') {
         entry.primaryType = 'new_investment';
-      } else if (m.type === 'expense_withdrawal' && entry.primaryType !== 'goal_reached' && !entry.primaryType?.startsWith('optimization') && entry.primaryType !== 'capital_protection' && entry.primaryType !== 'new_investment') {
-        entry.primaryType = 'expense_withdrawal';
       }
     });
 
@@ -198,6 +207,7 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
       const hasOptStart = entry.events.some((e) => e.type === 'optimization_start');
       const reinvs = entry.events.filter((e) => e.type === 'reinvestment' || e.type === 'goal_maintenance');
       const withdrawals = entry.events.filter((e) => e.type === 'expense_withdrawal');
+      const rescheduledExpenses = entry.events.filter((e) => e.type === 'expense_rescheduled');
       const newInvs = entry.events.filter((e) => e.type === 'new_investment');
       const protections = entry.events.filter((e) => e.type === 'capital_protection');
 
@@ -210,7 +220,15 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
       } else if (hasOptStart) {
         const ev = entry.events.find((e) => e.type === 'optimization_start');
         title = ev ? ev.title : 'Início da Otimização';
-      } else if (protections.length > 0 && reinvs.length === 0 && withdrawals.length === 0 && newInvs.length === 0) {
+      } else if (withdrawals.length > 0 || rescheduledExpenses.length > 0) {
+        if (withdrawals.length > 0 && rescheduledExpenses.length > 0) {
+          title = `${withdrawals.length + rescheduledExpenses.length} ações de despesa`;
+        } else if (withdrawals.length > 0) {
+          title = withdrawals.length === 1 ? withdrawals[0].title : `${withdrawals.length} pagamentos de despesas`;
+        } else {
+          title = rescheduledExpenses.length === 1 ? rescheduledExpenses[0].title : `${rescheduledExpenses.length} pagamentos pendentes / realocados`;
+        }
+      } else if (protections.length > 0 && reinvs.length === 0 && newInvs.length === 0) {
         title = protections[0].title;
       } else if (reinvs.length > 0 && withdrawals.length === 0 && newInvs.length === 0 && protections.length === 0) {
         if (reinvs.length === 1) {
@@ -224,12 +242,15 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
         }
       } else if (withdrawals.length > 0 && reinvs.length === 0 && newInvs.length === 0 && protections.length === 0) {
         title = withdrawals.length === 1 ? withdrawals[0].title : `${withdrawals.length}x Despesas Agendadas`;
+      } else if (rescheduledExpenses.length > 0 && reinvs.length === 0 && withdrawals.length === 0 && newInvs.length === 0 && protections.length === 0) {
+        title = rescheduledExpenses.length === 1 ? rescheduledExpenses[0].title : `${rescheduledExpenses.length}x Despesas Pendentes`;
       } else if (newInvs.length > 0 && reinvs.length === 0 && withdrawals.length === 0 && protections.length === 0) {
         title = newInvs.length === 1 ? newInvs[0].title : `${newInvs.length}x Novos Aportes`;
       } else {
         const parts: string[] = [];
         if (protections.length > 0) parts.push(`${protections.length} proteção`);
         if (withdrawals.length > 0) parts.push(`${withdrawals.length} Despesa(s)`);
+        if (rescheduledExpenses.length > 0) parts.push(`${rescheduledExpenses.length} pendência(s)`);
         if (reinvs.length > 0) parts.push(`${reinvs.length} Reinvest.`);
         if (newInvs.length > 0) parts.push(`${newInvs.length} Aporte(s)`);
         title = parts.join(' + ');
@@ -294,6 +315,19 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                   </button>
                 )}
               </div>
+            )}
+
+            {/* Ajuste de caixa externo */}
+            {onUpdateSettings && (
+              <button
+                type="button"
+                onClick={() => setIsBalanceAdjustmentOpen(true)}
+                className="text-xs px-2.5 py-1 rounded-xl font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                title="Adicionar saldo externo ao caixa livre ou à blindagem e recalcular o roadmap"
+              >
+                <Wallet className="h-3.5 w-3.5" />
+                <span>Ajustar saldos</span>
+              </button>
             )}
 
             {/* Botão de Reset de Meta e Novo Ciclo */}
@@ -693,6 +727,10 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                   <span className="font-medium text-emerald-800 dark:text-emerald-300">Novo aporte</span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="w-3 h-3 rounded-sm border-2 border-cyan-400 bg-cyan-400/20 inline-block" />
+                  <span className="font-semibold text-cyan-700 dark:text-cyan-300">Hoje</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span className="w-2.5 h-2.5 rounded-full bg-white dark:bg-slate-900 border-2 border-emerald-600 inline-block" />
                   <span className="font-medium text-emerald-700 dark:text-emerald-400">Reinvestimento</span>
                 </div>
@@ -700,6 +738,12 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-white dark:border-slate-800 inline-block" />
                     <span className="font-medium text-amber-700 dark:text-amber-400">Saque despesa</span>
+                  </div>
+                )}
+                {includeExpenses && roadmap.milestones.some((m) => m.type === 'expense_rescheduled') && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-white dark:border-slate-800 inline-block" />
+                    <span className="font-medium text-amber-700 dark:text-amber-400">Pagamento pendente / realocado</span>
                   </div>
                 )}
                 {(roadmap.protectionCheckpointsCount ?? 0) > 0 && (
@@ -899,6 +943,47 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                             </g>
                           )}
 
+                          {/* Indicador visual do dia atual: separa o estado real do presente
+                              da projeção futura e acompanha o ponto mesmo sem hover. */}
+                          {(() => {
+                            const todayPoint = points.find((p) => p.d.isToday);
+                            if (!todayPoint) return null;
+                            return (
+                              <g pointerEvents="none">
+                                <line
+                                  x1={todayPoint.x}
+                                  y1={padT}
+                                  x2={todayPoint.x}
+                                  y2={padT + graphH}
+                                  stroke="#22d3ee"
+                                  strokeWidth="2.5"
+                                  strokeDasharray="7 4"
+                                  opacity="0.95"
+                                />
+                                <rect
+                                  x={Math.max(padL, Math.min(todayPoint.x - 30, width - padR - 60))}
+                                  y={4}
+                                  width={60}
+                                  height={18}
+                                  rx={9}
+                                  fill="#083344"
+                                  stroke="#22d3ee"
+                                  strokeWidth="1"
+                                />
+                                <text
+                                  x={Math.max(padL, Math.min(todayPoint.x, width - padR - 30))}
+                                  y={16}
+                                  textAnchor="middle"
+                                  fontSize={fs(9)}
+                                  fontWeight="800"
+                                  fill="#67e8f9"
+                                >
+                                  HOJE
+                                </text>
+                              </g>
+                            );
+                          })()}
+
                           {/* Area Fill */}
                           <path d={areaPath} fill="url(#compoundingRoadmapGrad)" />
 
@@ -958,7 +1043,9 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                             const hasNewInvestment = (p.d.newInvestmentsToday ?? 0) > 0;
                             const isReinvestment = p.d.reinvestedToday > 0;
                             const hasExpense = (p.d.expensesDeductedToday ?? 0) > 0;
+                            const hasPendingExpense = roadmap.milestones.some((m) => m.date === p.d.date && m.type === 'expense_rescheduled');
                             const hasProtection = p.d.isProtectionPoint;
+                            const isToday = p.d.isToday === true;
 
                             // Tamanhos aumentados e destacados
                             const baseRadius = isScrollMode ? 6 : 4.5;
@@ -979,6 +1066,20 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                     stroke="#047857"
                                     strokeWidth="2.5"
                                     opacity="0.9"
+                                  />
+                                )}
+
+                                {/* Destaque do dia atual */}
+                                {isToday && (
+                                  <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={baseRadius + 8}
+                                    fill="none"
+                                    stroke="#22d3ee"
+                                    strokeWidth="2.5"
+                                    strokeDasharray="4 3"
+                                    opacity="0.95"
                                   />
                                 )}
 
@@ -1009,7 +1110,7 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                       ? baseRadius + 2
                                       : hasNewInvestment
                                       ? baseRadius + 2
-                                      : hasExpense
+                                      : (hasExpense || hasPendingExpense)
                                       ? baseRadius + 1.5
                                       : isReinvestment
                                       ? baseRadius + 1
@@ -1020,12 +1121,12 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                       ? '#10b981'
                                       : isGoal
                                       ? '#f43f5e'
+                                      : (hasExpense || hasPendingExpense)
+                                      ? '#f59e0b'
                                       : hasProtection
                                       ? '#2563eb'
                                       : hasNewInvestment
                                       ? '#059669'
-                                      : hasExpense
-                                      ? '#f59e0b'
                                       : isReinvestment
                                       ? '#ffffff'
                                       : (p.d.suggestedProtectionToday ?? 0) > 0
@@ -1037,12 +1138,12 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                       ? '#ffffff'
                                       : isGoal
                                       ? '#ffffff'
+                                      : (hasExpense || hasPendingExpense)
+                                      ? '#ffffff'
                                       : hasProtection
                                       ? '#bfdbfe'
                                       : hasNewInvestment
                                       ? '#a7f3d0'
-                                      : hasExpense
-                                      ? '#ffffff'
                                       : isReinvestment
                                       ? '#059669'
                                       : '#ffffff'
@@ -1091,6 +1192,12 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                   visibleIndices.pop();
                                 }
                                 visibleIndices.push(idx);
+                              } else if (p.d.isToday) {
+                                if (p.x - lastX < minSpacing && visibleIndices.length > 1) {
+                                  visibleIndices.pop();
+                                }
+                                visibleIndices.push(idx);
+                                lastX = p.x;
                               } else if (isGoal && p.x - lastX >= minSpacing * 0.8) {
                                 visibleIndices.push(idx);
                                 lastX = p.x;
@@ -1134,11 +1241,11 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                     y={height - 5}
                                     textAnchor={textAnchor}
                                     fontSize={fs(9)}
-                                    fill="#64748b"
+                                    fill={p.d.isToday ? '#0891b2' : '#64748b'}
                                     fontWeight="bold"
                                     className="dark:fill-slate-400 font-mono"
                                   >
-                                    Dia {p.d.day}
+                                    {p.d.isToday ? 'HOJE · ' : ''}Dia {p.d.day}
                                   </text>
                                 </g>
                               );
@@ -1416,7 +1523,9 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
                                             ? 'bg-teal-100 dark:bg-teal-900 text-teal-900 dark:text-teal-200 font-bold'
                                             : (m.primaryType || m.type) === 'expense_withdrawal'
                                               ? 'bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-200 font-bold'
-                                              : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                              : (m.primaryType || m.type) === 'expense_rescheduled'
+                                                ? 'bg-orange-100 dark:bg-orange-900 text-orange-900 dark:text-orange-200 font-bold border border-orange-200 dark:border-orange-700'
+                                                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                               }`}>
                                 {m.dateFormatted}
                               </span>
@@ -1648,6 +1757,16 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
       />
 
       {/* Modal para Definir Nova Meta / Resetar Ciclo */}
+      <BalanceAdjustmentModal
+        isOpen={isBalanceAdjustmentOpen}
+        onClose={() => setIsBalanceAdjustmentOpen(false)}
+        settings={settings}
+        today={getTodayString()}
+        onSave={(nextSettings) => {
+          onUpdateSettings?.(nextSettings);
+        }}
+      />
+
       <ResetGoalCycleModal
         isOpen={isResetGoalModalOpen}
         onClose={() => setIsResetGoalModalOpen(false)}

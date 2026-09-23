@@ -1,5 +1,5 @@
 import { calculatePortfolioRoadmap } from '../src/utils/roadmap.js';
-import { InvestmentProduct, PlatformSettings, ProductTemplate } from '../src/types/investment.js';
+import { Expense, InvestmentProduct, PlatformSettings, ProductTemplate } from '../src/types/investment.js';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -138,4 +138,131 @@ const zeroResult = calculatePortfolioRoadmap({
 
 assert(Number.isFinite(zeroResult.percentOfGoalReached), 'Percentual de meta com goal=0 é finito e seguro');
 
+
+// Teste 6: Ações de dias não concluídos não podem ser efetivadas como realizadas.
+const actionInitialProduct: InvestmentProduct = {
+  ...mockInitialProducts[0],
+  id: 'prod-action-1',
+  investedAmount: 1000,
+  dailyPercentage: 20, // R$ 200/dia; libera caixa suficiente para uma nova cota no dia seguinte
+  startDate: '2026-09-21',
+};
+
+const pendingDaySettings: PlatformSettings = {
+  ...mockSettings,
+  goalCycleStartDate: '2026-09-21',
+  dailyGoalAmount: 1000,
+  completedRoadmapDays: [],
+};
+const pendingDayResult = calculatePortfolioRoadmap({
+  products: [actionInitialProduct],
+  expenses: [],
+  settings: pendingDaySettings,
+  horizonDays: 3,
+  templates: mockTemplates,
+  includeExpenses: true,
+  today: '2026-09-22',
+});
+
+const pendingDay1 = pendingDayResult.getDayDetails(1);
+assert(
+  (pendingDay1?.acquisitionsToday.length ?? 0) > 0,
+  'Dia atual não concluído mantém a ação como pendência visível para confirmação'
+);
+assert(
+  (pendingDay1?.activeContracts.some((c) => c.startDay === 1 && !c.isInitialPortfolio) ?? false) === false,
+  'Dia atual não concluído não efetiva a aquisição como contrato/rendimento'
+);
+assert(
+  pendingDayResult.projectedAcquisitions.some((a) => a.date === '2026-09-22'),
+  'A aquisição planejada permanece visível como projeção pendente do dia atual'
+);
+
+const completedDayResult = calculatePortfolioRoadmap({
+  products: [actionInitialProduct],
+  expenses: [],
+  settings: { ...pendingDaySettings, completedRoadmapDays: ['2026-09-22'] },
+  horizonDays: 3,
+  templates: mockTemplates,
+  includeExpenses: true,
+  today: '2026-09-22',
+});
+assert(
+  (completedDayResult.getDayDetails(1)?.acquisitionsToday.length ?? 0) > 0,
+  'Dia concluído efetiva a aquisição planejada para aquele dia'
+);
+
+const pendingExpense: Expense = {
+  id: 'exp-roadmap-1',
+  title: 'Conta do dia',
+  amount: 50,
+  dueDate: '2026-09-22',
+  hasDueDate: true,
+  category: 'Serviços',
+  isPaid: false,
+  deductFromRoadmap: true,
+};
+
+const missedExpenseResult = calculatePortfolioRoadmap({
+  products: [actionInitialProduct],
+  expenses: [pendingExpense],
+  settings: pendingDaySettings,
+  horizonDays: 2,
+  templates: mockTemplates,
+  includeExpenses: true,
+  today: '2026-09-22',
+});
+assert(
+  (missedExpenseResult.getDayDetails(1)?.expensesDeductedToday ?? 0) === 0,
+  'Dívida de um dia não concluído não é considerada paga no roadmap'
+);
+assert(
+  (missedExpenseResult.getDayDetails(1)?.expensesTodayList.some((e) => e.id === pendingExpense.id) ?? false),
+  'Dívida do dia atual aparece como ação pendente na própria data recomendada'
+);
+assert(
+  (missedExpenseResult.getDayDetails(2)?.expensesTodayList.some((e) => e.id === pendingExpense.id) ?? false) === false,
+  'Dívida pendente do dia atual não se repete no dia seguinte dentro da mesma simulação'
+);
+
+const overdueExpense: Expense = {
+  ...pendingExpense,
+  id: 'exp-roadmap-overdue-1',
+  dueDate: '2026-09-21',
+};
+const overdueExpenseResult = calculatePortfolioRoadmap({
+  products: [actionInitialProduct],
+  expenses: [overdueExpense],
+  settings: pendingDaySettings,
+  horizonDays: 2,
+  templates: mockTemplates,
+  includeExpenses: true,
+  today: '2026-09-22',
+});
+assert(
+  (overdueExpenseResult.getDayDetails(0)?.expensesTodayList.some((e) => e.id === overdueExpense.id) ?? false),
+  'Vencimento perdido aparece no detalhe do próprio dia original'
+);
+assert(
+  (overdueExpenseResult.getDayDetails(1)?.expensesTodayList.some((e) => e.id === overdueExpense.id) ?? false),
+  'Dívida vencida reaparece no detalhe da nova data recomendada'
+);
+assert(
+  (overdueExpenseResult.getDayDetails(2)?.expensesTodayList.some((e) => e.id === overdueExpense.id) ?? false) === false,
+  'Dívida vencida não é duplicada em um terceiro dia'
+);
+
+const completedExpenseResult = calculatePortfolioRoadmap({
+  products: [actionInitialProduct],
+  expenses: [pendingExpense],
+  settings: { ...pendingDaySettings, completedRoadmapDays: ['2026-09-22'] },
+  horizonDays: 2,
+  templates: mockTemplates,
+  includeExpenses: true,
+  today: '2026-09-22',
+});
+assert(
+  (completedExpenseResult.getDayDetails(1)?.expensesDeductedToday ?? 0) >= 50,
+  'Dívida é considerada paga quando o dia é concluído'
+);
 console.log('\n🎉 Todos os testes de lógica e auditoria do Roadmap passaram com 100% de sucesso!');

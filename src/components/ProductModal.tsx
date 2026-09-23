@@ -7,6 +7,7 @@ import {
   calculateProductMetrics, 
   getTodayString 
 } from '../utils/calculations';
+import { createId } from '../utils/id';
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -171,7 +172,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     if (!name.trim()) return;
 
     const product: InvestmentProduct = {
-      id: productToEdit?.id || `prod-${Date.now()}`,
+      id: productToEdit?.id || createId('prod'),
       name: name.trim(),
       investedAmount: Math.max(0.01, Number(investedAmount)),
       returnAmount: Math.max(0.01, Number(returnAmount)),
@@ -190,7 +191,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     // Se o usuário marcou para salvar como novo template no catálogo
     if (saveAsTemplate && onSaveTemplate) {
       const newTemplate: ProductTemplate = {
-        id: `tpl-${Date.now()}`,
+        id: createId('tpl'),
         name: name.trim(),
         investedAmount: Math.max(0.01, Number(investedAmount)),
         returnAmount: Math.max(0.01, Number(returnAmount)),

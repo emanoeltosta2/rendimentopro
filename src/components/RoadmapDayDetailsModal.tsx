@@ -100,6 +100,11 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-slate-800 text-slate-200 border border-slate-700">
                   Dia {details.day}
                 </span>
+                {details.isToday && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-extrabold bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+                    Hoje
+                  </span>
+                )}
                 {isStartDate && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-800">
                     <Flag className="h-3 w-3 fill-emerald-400 text-emerald-400" />
@@ -254,6 +259,24 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Pagamento previsto para hoje: é uma pendência, não uma baixa financeira. */}
+          {!isDayCompleted && details.expensesTodayList.length > 0 && details.expensesDeductedToday <= 0 && (
+            <div className="p-3 bg-orange-950/30 border border-orange-900/70 rounded-xl flex items-start gap-2.5 text-xs text-orange-200 shadow-2xs">
+              <Clock className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-orange-200">Pagamento previsto / pendente neste dia</span>
+                  <span className="font-extrabold text-orange-300">
+                    {formatCurrency(details.expensesTodayList.reduce((sum, e) => sum + e.amount, 0))}
+                  </span>
+                </div>
+                <p className="text-orange-300/90 mt-1 leading-relaxed">
+                  Esta é a data recomendada para a quitação. A dívida só será marcada como paga e retirada do fluxo quando você <strong>marcar o dia como concluído</strong>. Se o dia for perdido, o Roadmap recalculará a próxima data a partir do novo dia atual.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Goal Status Strip */}
           <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${

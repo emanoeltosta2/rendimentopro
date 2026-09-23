@@ -38,6 +38,7 @@ interface DashboardOverviewProps {
   onSetRoadmapStartDate?: (startDate: string | undefined) => void;
   onCompleteRoadmapDay?: (details: RoadmapPointDetails) => void;
   onUndoCompleteRoadmapDay?: (date: string) => void;
+  onUpdateSettings?: (settings: PlatformSettings) => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -52,6 +53,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   onSetRoadmapStartDate,
   onCompleteRoadmapDay,
   onUndoCompleteRoadmapDay,
+  onUpdateSettings,
 }) => {
   const today = getTodayString();
   const activeProducts = products.filter((p) => isProductActiveOnDate(p, today));
@@ -185,6 +187,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         onSetRoadmapStartDate={onSetRoadmapStartDate}
         onCompleteRoadmapDay={onCompleteRoadmapDay}
         onUndoCompleteRoadmapDay={onUndoCompleteRoadmapDay}
+        onUpdateSettings={onUpdateSettings}
       />
 
       {/* Spotlight: Smart Expense Optimization Recommendation */}
