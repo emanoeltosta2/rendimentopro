@@ -1220,8 +1220,11 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         return;
       }
 
-      currentFreeCash -= spent;
-      bankBalance = Math.max(0, bankBalance - spent);
+      // Debita o caixa livre a cada compra. Sem isso, o laço reaproveitava o
+      // mesmo caixa em várias passadas e comprava mais do que havia disponível
+      // (ex.: R$ 200 gastos com R$ 108 livres).
+      currentFreeCash = Math.max(0, Number((currentFreeCash - spent).toFixed(2)));
+      bankBalance = Math.max(0, Number((bankBalance - spent).toFixed(2)));
       deficitRemaining = Math.max(0, deficitRemaining - addedDaily);
 
       const normKey = getProductNormalizedKey(name);
@@ -1383,11 +1386,31 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
             );
           }
         } else {
-          // Fase de ramp-up até a meta
-          const covering = affordable
+          // Fase de ramp-up até a meta.
+          //
+          // Critério: fechar o déficit com o MENOR NÚMERO DE CONTRATOS.
+          // Antes a escolha era a cota mais barata que cobrisse o déficit, o
+          // que empilhava cotas pequenas (8x R$ 25) onde uma cota maior
+          // (1x R$ 100) entrega o mesmo rendimento com 1/8 da gestão.
+          const affordableCovering = affordable
             .filter((t) => tplDailyYield(t) >= deficitRemaining)
-            .sort((a, b) => a.investedAmount - b.investedAmount);
-          chosen = covering[0] ?? affordable[0];
+            .sort((a, b) => {
+              const unitsA = Math.ceil(deficitRemaining / Math.max(0.01, tplDailyYield(a)));
+              const unitsB = Math.ceil(deficitRemaining / Math.max(0.01, tplDailyYield(b)));
+              if (unitsA !== unitsB) return unitsA - unitsB;
+              const effA = tplDailyYield(a) / Math.max(0.01, a.investedAmount);
+              const effB = tplDailyYield(b) / Math.max(0.01, b.investedAmount);
+              if (Math.abs(effB - effA) > 1e-9) return effB - effA;
+              return a.investedAmount - b.investedAmount;
+            });
+
+          if (affordableCovering.length > 0) {
+            chosen = affordableCovering[0];
+          } else {
+            // Nenhuma cota cobre o déficit inteiro: usa a MAIOR que caiba,
+            // para chegar o mais perto possível da meta com o caixa de hoje.
+            chosen = [...affordable].sort((a, b) => b.investedAmount - a.investedAmount)[0];
+          }
           const yieldPerUnit = Math.max(0.01, tplDailyYield(chosen));
           unitsToBuy = Math.min(
             Math.ceil(deficitRemaining / yieldPerUnit),
