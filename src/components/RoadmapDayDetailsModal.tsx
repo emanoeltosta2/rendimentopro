@@ -332,6 +332,32 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                         ? 'Nenhuma cota será comprada neste dia. O dinheiro continua no caixa e chega somado ao dia seguinte, onde a alocação é recalculada.'
                         : 'Adie para não comprar hoje — útil quando você prefere manter o mesmo horário de compra todos os dias. As despesas deste dia continuam sendo pagas normalmente.'}
                     </p>
+
+                    {/* O que ficou adiado neste dia */}
+                    {isAcquisitionDeferred && todayAcquisitions.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {todayAcquisitions.map((acq, idx) => (
+                          <div
+                            key={`${acq.id}-defer-${idx}`}
+                            className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-amber-950/30 border border-amber-900/50 text-[11px]"
+                          >
+                            <span className="text-amber-200 truncate">
+                              {acq.name}
+                              {acq.units > 1 ? (
+                                <span className="text-amber-300/80"> · {acq.units}x cotas</span>
+                              ) : null}
+                            </span>
+                            <span className="font-bold text-amber-300 shrink-0">
+                              {formatCurrency(acq.investedAmount)}
+                              <span className="font-normal text-amber-400/80"> adiado</span>
+                            </span>
+                          </div>
+                        ))}
+                        <p className="text-[10px] text-amber-400/80 pt-0.5">
+                          Ao concluir o dia, esses valores seguem no caixa em vez de virar contratos.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
