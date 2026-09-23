@@ -536,7 +536,7 @@ export default function App() {
         });
       }
     },
-    [settings, user, trackWrite, persistSettings]
+    [settings, products, user, trackWrite, persistSettings]
   );
 
   const handleUndoCompleteRoadmapDay = useCallback(
