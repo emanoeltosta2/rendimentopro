@@ -1,4 +1,4 @@
-﻿export interface InvestmentProduct {
+export interface InvestmentProduct {
   id: string;
   name: string;
   investedAmount: number; // R$ Investido
@@ -68,7 +68,16 @@ export interface PlatformSettings {
   /** Aporte externo destinado ├á reserva de blindagem a partir do dia atual. */
   manualProtectionInjection?: number;
   manualProtectionInjectionDate?: string;
+  /** Lançamentos manuais de caixa, um por registro, com data própria. */
   manualCashMovements?: ManualCashMovement[];
+  /**
+   * Datas (YYYY-MM-DD) em que o usuário adiou as compras do dia.
+   *
+   * Numa data adiada o motor não efetiva nenhuma aquisição — o caixa fica
+   * parado no banco e chega acumulado ao dia seguinte, onde a alocação é
+   * recalculada com o valor a mais.
+   */
+  deferredAcquisitions?: string[];
 }
 
 /** Lançamento manual de caixa, registrado no detalhe de um dia do Roadmap. */
@@ -153,8 +162,7 @@ export interface PortfolioMilestone {
     | 'new_investment'
     | 'capital_protection'
     | 'optimization_start'
-    | 'optimization_completed'
-    | 'manual_cash';
+    | 'optimization_completed';
   title: string;
   description: string;
   amount?: number; // Valor total do saque bruto ou reinvestimento
