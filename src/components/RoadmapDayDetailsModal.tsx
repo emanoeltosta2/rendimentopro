@@ -353,8 +353,9 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                             </span>
                           </div>
                         ))}
-                        <p className="text-[10px] text-amber-400/80 pt-0.5">
-                          Ao concluir o dia, esses valores seguem no caixa em vez de virar contratos.
+                        <p className="text-[10px] text-slate-400 pt-0.5">
+                          Estas cotas <strong className="text-slate-300">não foram compradas</strong> — o valor segue no caixa
+                          e entra na próxima data com compras.
                         </p>
                       </div>
                     )}
@@ -905,8 +906,20 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-slate-100 text-xs sm:text-sm">{acq.name}</span>
-                            <span className="text-[11px] font-semibold bg-emerald-950/70 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded">
-                              Hoje (Dia {details.day})
+                            <span
+                              className={
+                                isAcquisitionDeferred
+                                  ? 'text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded'
+                                  : isDayCompleted
+                                  ? 'text-[11px] font-semibold bg-emerald-950/70 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded'
+                                  : 'text-[11px] font-semibold bg-amber-950/60 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded'
+                              }
+                            >
+                              {isAcquisitionDeferred
+                                ? `Adiada · Dia ${details.day}`
+                                : isDayCompleted
+                                ? `Comprado · Dia ${details.day}`
+                                : `A comprar · Dia ${details.day}`}
                             </span>
                             {acq.units > 1 && (
                               <span className="text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded">
@@ -922,8 +935,24 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
 
                       <div className="flex items-center gap-4 sm:text-right shrink-0 bg-slate-950/70 px-3 py-2 rounded-lg border border-slate-800">
                         <div>
-                          <span className="text-[11px] text-slate-400 block font-medium">Investido hoje</span>
-                          <span className="font-bold text-slate-100 text-xs">{formatCurrency(acq.investedAmount)}</span>
+                          <span className="text-[11px] text-slate-400 block font-medium">
+                            {isAcquisitionDeferred
+                              ? 'Adiado'
+                              : isDayCompleted
+                              ? 'Investido'
+                              : 'Previsto'}
+                          </span>
+                          <span
+                            className={
+                              isAcquisitionDeferred
+                                ? 'font-bold text-slate-400 text-xs line-through'
+                                : isDayCompleted
+                                ? 'font-bold text-slate-100 text-xs'
+                                : 'font-bold text-amber-300 text-xs'
+                            }
+                          >
+                            {formatCurrency(acq.investedAmount)}
+                          </span>
                         </div>
                         <div className="border-l border-slate-800 pl-3">
                           <span className="text-[11px] text-slate-400 block font-medium">Renda adicional</span>
