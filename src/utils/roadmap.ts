@@ -1202,6 +1202,17 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       // Prévia do dia atual: registra a ação planejada, mas não altera o estado
       // financeiro. A confirmação do usuário recalcula o roadmap e materializa
       // o produto de verdade no App.
+      /**
+       * Dia ainda nao confirmado (tipicamente HOJE).
+       *
+       * OPCAO A: a compra planejada entra na SIMULACAO como contrato, para que
+       * os dias seguintes projetem a renda com ela. Sem isso, o dia de hoje
+       * ficava invisivel para a projecao e o dia seguinte mostrava a renda
+       * antiga, defasando todo o planejamento.
+       *
+       * O caixa NAO e debitado aqui e o contrato nao vai para o App: quem
+       * materializa de verdade e o botao "Marcar Concluido".
+       */
       if (!roadmapActionRealized) {
         projectedAcquisitions.push({
           id: `planned_d${day}_${templateId}`,
@@ -1217,6 +1228,23 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           durationDays,
           returnCapitalAtEnd,
         });
+
+        contracts.push({
+          id: `planned_d${day}_${templateId}_${contractSeq++}`,
+          name,
+          unitPrice,
+          units,
+          investedAmount: spent,
+          dailyPercentage,
+          durationDays,
+          startDay: day,
+          endDay: day + durationDays,
+          returnCapitalAtEnd,
+          isReinvestment: true,
+          isNewInvestment: false,
+          isInitialPortfolio: false,
+        });
+
         return;
       }
 
@@ -1330,25 +1358,17 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       /**
        * Plano de compras do dia.
        *
-       * Regra dura: a soma do que for comprado NUNCA pode passar do caixa livre
-       * (o "Alocável reinvestir" exibido no painel). Antes o laço comprava e um
-       * bloco de "cota base" comprava de novo depois, sem checar o caixa — o que
-       * produzia R$ 200 de sugestão com R$ 108 disponíveis.
+       * Regra dura: a soma do que for comprado NUNCA passa do caixa livre (o
+       * "Alocável reinvestir" exibido no painel). O plano e montado por
+       * DECOMPOSICAO, antes de qualquer compra — cabe no caixa por construcao.
        *
-       * O plano é montado por DECOMPOSIÇÃO, antes de qualquer compra: cabe no
-       * caixa por construção, porque cada item só entra se ainda couber.
-       *
-       * Preferência: a MENOR QUANTIDADE de contratos. Escolhe sempre a MAIOR
-       * cota que caiba no que sobrou, até o déficit fechar ou o caixa acabar.
-       * Ex.: R$ 108 / déficit R$ 20  ->  1x R$ 100 (para).
-       *      R$  75 / déficit R$ 20  ->  1x R$ 50 + 1x R$ 25.
-       *      R$  30 / déficit R$ 20  ->  1x R$ 25.
+       * Preferencia: a MENOR QUANTIDADE de contratos. Pega sempre a MAIOR cota
+       * que ainda caiba, ate o deficit fechar ou o caixa acabar.
        */
       const plannedPurchases: { template: ProductTemplate; units: number }[] = [];
       let plannedCash = Number(currentFreeCash.toFixed(2));
       let plannedDeficit = deficitRemaining;
 
-      // Cota ótima pendente (consolidação pós-meta) tem prioridade.
       if (hasMissingOptimalToBuy()) {
         const optimal = missingOptimalTemplates.find((t) => t.investedAmount <= plannedCash);
         if (optimal) {
@@ -1360,7 +1380,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         }
       }
 
-      // Enquanto houver déficit e caixa, pega sempre a MAIOR cota que caiba.
       let planGuard = 0;
       while (plannedDeficit > 0.001 && plannedCash >= minCandidatePrice && planGuard < 40) {
         planGuard += 1;
@@ -1382,7 +1401,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         plannedDeficit = Math.max(0, plannedDeficit - yieldPerUnit * units);
       }
 
-      // Executa o plano. O buy() debita o caixa, então o total nunca estoura.
       for (const item of plannedPurchases) {
         buy(
           item.template.name,
@@ -1394,7 +1412,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           item.template.id
         );
 
-        // Uma prévia representa uma única ação pendente do dia atual.
         if (previewTodayAction) break;
       }
     }
@@ -1837,8 +1854,21 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           : `Atingir a meta para iniciar a consolidação de produtos`,
   };
 
+  /**
+   * Renda diaria PREVISTA: a real (contratos existentes) somada ao que as
+   * compras planejadas para hoje vao acrescentar. O painel do dia ja mostrava
+   * esse total, mas o cartao de topo mostrava so a real — dai a divergencia.
+   */
+  const projectedDailyYield = (() => {
+    const pendingToday = projectedAcquisitions
+      .filter((acq) => acq.date === today)
+      .reduce((sum, acq) => sum + (acq.dailyYieldAdded || 0), 0);
+    return Number((currentDailyYield + pendingToday).toFixed(2));
+  })();
+
   return {
     currentDailyYield: Number(currentDailyYield.toFixed(2)),
+    projectedDailyYield,
     targetDailyYield,
     percentOfGoalReached: targetDailyYield > 0
       ? Number(Math.min(100, (currentDailyYield / targetDailyYield) * 100).toFixed(1))
