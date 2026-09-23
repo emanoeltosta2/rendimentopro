@@ -77,6 +77,16 @@ export function normalizeSettings(raw: Partial<PlatformSettings> | null | undefi
     // Lançamentos manuais: descarta entradas malformadas e normaliza as demais.
     // `bank` pode ser negativo de propósito — não usar Math.max(0, ...) aqui.
     manualCashMovements: Array.isArray(s.manualCashMovements)
+          // Datas (YYYY-MM-DD) em que o usuario adiou as compras do dia.
+    deferredAcquisitions: Array.isArray(s.deferredAcquisitions)
+      ? Array.from(
+          new Set(
+            s.deferredAcquisitions
+              .filter((d): d is string => typeof d === 'string' && Boolean(d.trim()))
+              .map((d) => d.trim().split('T')[0])
+          )
+        )
+      : [],
       ? s.manualCashMovements
           .filter(
             (m): m is NonNullable<typeof m> =>
