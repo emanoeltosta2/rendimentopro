@@ -495,9 +495,6 @@ export default function App() {
         });
       }
 
-      // Se o usuario adiou as compras deste dia, nenhuma cota e criada — mas as
-      // despesas seguem sendo pagas e a data continua sendo marcada como concluida.
-      const isDeferred = (settings.deferredAcquisitions ?? []).includes(date);
       // Se o usuário adiou as compras deste dia, nenhuma cota é criada — mas as
       // despesas seguem sendo pagas e a data continua sendo marcada como concluída.
       const isDeferred = (settings.deferredAcquisitions ?? []).includes(date);
