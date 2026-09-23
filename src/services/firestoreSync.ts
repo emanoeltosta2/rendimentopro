@@ -326,6 +326,7 @@ export const firestoreSync = {
             manualProtectionInjection: num(d.manualProtectionInjection, 0),
             manualProtectionInjectionDate: typeof d.manualProtectionInjectionDate === 'string' && d.manualProtectionInjectionDate.trim() ? d.manualProtectionInjectionDate.trim() : undefined,
             completedRoadmapDays: Array.isArray(d.completedRoadmapDays) ? d.completedRoadmapDays : [],
+            manualCashMovements: Array.isArray(d.manualCashMovements) ? d.manualCashMovements : [],
           })
         );
       },
