@@ -665,6 +665,17 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     let activeInvestedAmount = 0;
 
     for (const c of contracts) {
+      // CORREÇÃO (leak de prévia não confirmada): antes, esta checagem não
+      // existia e um contrato criado como prévia de "hoje" (isUnconfirmedPreview,
+      // cujo caixa nunca foi debitado) passava a contar como capital ativo e a
+      // gerar rendimento de verdade a partir do dia seguinte — permanentemente,
+      // mesmo sem o usuário jamais ter confirmado a ação. Isso inflava
+      // "Capital em custódia", "produtos ativos" e o saldo em banco (via
+      // platformBalance) com dinheiro que nunca saiu do banco, e destoava da
+      // lista "Carteira Ativa" (calculada à parte, sem este bug). Enquanto o
+      // dia não é confirmado, a prévia não tem nenhum efeito financeiro além
+      // de aparecer na aba "Aquisições" do seu próprio dia.
+      if (c.isUnconfirmedPreview) continue;
       if (day > c.startDay && day <= c.endDay) {
         dailyGross += c.investedAmount * (c.dailyPercentage / 100);
       }
@@ -1494,6 +1505,21 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     }
 
     // --- 8. Registro escalar do dia ------------------------------------
+    // Recalcula a carteira ativa já COM as compras de hoje aplicadas, para
+    // exibição ("Capital em custódia"). Não reaproveita `activeCount`/
+    // `activeInvestedAmount` (Seção 1) porque esses ficam intencionalmente
+    // defasados de 1 dia (usados na lógica de meta/otimização, que não deve
+    // contar uma compra do próprio dia — ela ainda não rendeu nada).
+    let activeContractsCountDisplay = 0;
+    let activeInvestedAmountDisplay = 0;
+    for (const c of contracts) {
+      if (c.isUnconfirmedPreview) continue;
+      if (day >= c.startDay && day < c.endDay) {
+        activeContractsCountDisplay += 1;
+        activeInvestedAmountDisplay += c.investedAmount;
+      }
+    }
+
     const reservedForExpensesCalc = Number(Math.min(bankBalance, reservedCashForPending).toFixed(2));
     const reservedForReinvestmentCalc = Number(
       Math.max(0, bankBalance - reservedForExpensesCalc - totalProtectedCashAccumulated).toFixed(2)
@@ -1528,8 +1554,8 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       reinvestedToday: Number(reinvestedToday.toFixed(2)),
       totalReinvestedUpToDay: Number(totalReinvested.toFixed(2)),
       newInvestmentsTodayAmount: Number(newInvestmentsTodayAmount.toFixed(2)),
-      activeContractsCount: activeCount,
-      activeInvestedAmount: Number(activeInvestedAmount.toFixed(2)),
+      activeContractsCount: activeContractsCountDisplay,
+      activeInvestedAmount: Number(activeInvestedAmountDisplay.toFixed(2)),
       isProtectionPoint: isProtectionPointToday,
       expenseIdsToday,
       isOptimizationPhase: startOptimizationDay !== null && day >= startOptimizationDay,
@@ -1662,31 +1688,38 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         ? Number(Math.min(100, (rec.dailyGross / targetDailyYield) * 100).toFixed(1))
         : 100,
       isGoalReached: rec.dailyGross >= targetDailyYield,
-      // Uma prévia de hoje ainda não confirmada (`isUnconfirmedPreview`) só
-      // conta como ativa/realizada a partir do dia SEGUINTE ao seu início —
-      // no próprio dia ela é só um plano, sem caixa debitado de verdade.
+      // CORREÇÃO (leak de prévia não confirmada): uma prévia de hoje ainda
+      // não confirmada (`isUnconfirmedPreview`) nunca teve o caixa debitado
+      // de verdade, então não pode contar como ativa em NENHUM dia — nem no
+      // próprio dia, nem (o bug anterior) a partir do dia seguinte. Ela só
+      // aparece como plano em `acquisitionsToday`/`Aquisições`, e só entra
+      // aqui de fato quando o usuário confirma o dia (o que remove a flag).
       activeContracts: contracts
-        .filter((c) => day >= c.startDay && day < c.endDay && !(c.isUnconfirmedPreview && day === c.startDay))
+        .filter((c) => day >= c.startDay && day < c.endDay && !c.isUnconfirmedPreview)
         .map((c) => toSnapshot(c, day)),
       acquisitionsToday,
       newPurchasesToday: acquisitionsToday,
       newInvestmentsToday: acquisitionsToday,
+      // CORREÇÃO: a condição antiga (`isNewInvestment || !isInitialPortfolio`)
+      // era um OR que qualquer contrato não-inicial já satisfazia — na
+      // prática esta lista saía idêntica a `allReinvestmentsUpToDay`, em vez
+      // de isolar só os investimentos genuinamente novos.
       newInvestmentsUpToDay: contracts
-        .filter(
-          (c) =>
-            c.startDay <= day &&
-            (c.isNewInvestment || !c.isInitialPortfolio) &&
-            !(c.isUnconfirmedPreview && day === c.startDay)
-        )
+        .filter((c) => c.startDay <= day && c.isNewInvestment === true && !c.isUnconfirmedPreview)
         .map((c) => toSnapshot(c, day)),
+      // CORREÇÃO: contava TODO contrato não-inicial (novos + reinvestidos)
+      // como "aporte", mas o card "Total reinvestido" (totalReinvestedUpToDay)
+      // soma só os contratos de reinvestimento — a legenda "X aportes" nunca
+      // batia com o valor em R$ mostrado acima dela. Agora os dois vêm do
+      // mesmo conjunto (isReinvestment).
       allReinvestmentsUpToDay: contracts
-        .filter((c) => c.startDay <= day && !c.isInitialPortfolio && !(c.isUnconfirmedPreview && day === c.startDay))
+        .filter((c) => c.startDay <= day && c.isReinvestment === true && !c.isUnconfirmedPreview)
         .map((c) => toSnapshot(c, day)),
       expiredContractsUpToDay: contracts
-        .filter((c) => c.endDay <= day)
+        .filter((c) => c.endDay <= day && !c.isUnconfirmedPreview)
         .map((c) => toSnapshot(c, day)),
       expiredTodayContracts: contracts
-        .filter((c) => c.endDay === day)
+        .filter((c) => c.endDay === day && !c.isUnconfirmedPreview)
         .map((c) => toSnapshot(c, day)),
       expensesTodayList: (() => {
         const paidOrDeducted = rec.expenseIdsToday
