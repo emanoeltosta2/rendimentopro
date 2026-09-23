@@ -495,9 +495,14 @@ export default function App() {
         });
       }
 
-      // 2. Se houve novas aquisições planejadas para este dia, adiciona aos meus produtos
-      const acquisitions = details.acquisitionsToday ?? details.newPurchasesToday ?? [];
+      // Se o usuario adiou as compras deste dia, nenhuma cota e criada — mas as
+      // despesas seguem sendo pagas e a data continua sendo marcada como concluida.
+      const isDeferred = (settings.deferredAcquisitions ?? []).includes(date);
+      const acquisitions = isDeferred
+        ? []
+        : (details.acquisitionsToday ?? details.newPurchasesToday ?? []);
       if (acquisitions.length > 0) {
+
         const newProducts: InvestmentProduct[] = acquisitions.map((acq) => ({
           id: createId('prod'),
           name: acq.name,
@@ -596,6 +601,7 @@ export default function App() {
       persistSettings({
         ...settings,
         completedRoadmapDays: currentCompleted.filter((d) => d !== date),
+        deferredAcquisitions: (settings.deferredAcquisitions ?? []).filter((d) => d !== date),
       });
     },
     [settings, products, expenses, user, trackWrite, persistSettings]
