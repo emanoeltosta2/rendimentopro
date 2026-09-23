@@ -136,6 +136,7 @@ function buildSettingsPayload(
     manualProtectionInjection: s.manualProtectionInjection ?? 0,
     manualProtectionInjectionDate: s.manualProtectionInjectionDate ?? null,
     completedRoadmapDays: s.completedRoadmapDays ?? [],
+    manualCashMovements: s.manualCashMovements ?? [],
     updatedAt: new Date().toISOString(),
   };
 }
