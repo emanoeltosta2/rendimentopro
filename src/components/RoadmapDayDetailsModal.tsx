@@ -16,6 +16,8 @@ import {
   Flag,
   RotateCcw,
   Sparkles,
+  CalendarClock,
+  Undo2,
 } from 'lucide-react';
 import { RoadmapPointDetails, PlatformSettings, ManualCashMovement } from '../types/investment';
 import { formatCurrency, formatNumberBR } from '../utils/calculations';
@@ -38,6 +40,14 @@ interface RoadmapDayDetailsModalProps {
   onAddMovement?: (date: string, delta: { bank: number; protection: number; note?: string }) => void;
   /** Remove um lançamento já registrado. */
   onRemoveMovement?: (movementId: string) => void;
+  /** True quando as compras deste dia foram adiadas pelo usuário. */
+  isAcquisitionDeferred?: boolean;
+  /**
+   * Alterna o adiamento das compras deste dia. Com o adiamento ativo, o dia
+   * pode ser concluído normalmente (despesas pagas, data registrada) mas
+   * nenhuma cota é comprada — o caixa acumula e o dia seguinte reotimiza.
+   */
+  onToggleDeferAcquisitions?: (date: string, deferred: boolean) => void;
 }
 
 export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
@@ -54,6 +64,8 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
   movementsForDay,
   onAddMovement,
   onRemoveMovement,
+  isAcquisitionDeferred,
+  onToggleDeferAcquisitions,
 }) => {
   type TabId = 'acquisitions' | 'active' | 'expenses' | 'expired';
 
@@ -283,6 +295,70 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Adiamento das compras deste dia */}
+          {details && onToggleDeferAcquisitions && (
+            <div className={`p-3.5 rounded-xl border transition-all ${
+              isAcquisitionDeferred
+                ? 'bg-amber-950/30 border-amber-800/70 shadow-2xs'
+                : 'bg-slate-900/70 border-slate-800 shadow-2xs'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <div className={`p-2 rounded-lg shrink-0 mt-0.5 border ${
+                    isAcquisitionDeferred
+                      ? 'bg-amber-950/70 text-amber-300 border-amber-800'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}>
+                    <CalendarClock className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-slate-100">
+                        Compras deste dia
+                      </span>
+                      {isAcquisitionDeferred ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-950/70 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full">
+                          Adiadas
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full">
+                          Compra prevista
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                      {isAcquisitionDeferred
+                        ? 'Nenhuma cota será comprada neste dia. O dinheiro continua no caixa e chega somado ao dia seguinte, onde a alocação é recalculada.'
+                        : 'Adie para não comprar hoje — útil quando você prefere manter o mesmo horário de compra todos os dias. As despesas deste dia continuam sendo pagas normalmente.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onToggleDeferAcquisitions(details.date, !isAcquisitionDeferred)}
+                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all shrink-0 self-end sm:self-center cursor-pointer whitespace-nowrap ${
+                    isAcquisitionDeferred
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                      : 'bg-amber-600 hover:bg-amber-500 text-white shadow-xs'
+                  }`}
+                >
+                  {isAcquisitionDeferred ? (
+                    <>
+                      <Undo2 className="h-3.5 w-3.5" />
+                      <span>Cancelar adiamento</span>
+                    </>
+                  ) : (
+                    <>
+                      <CalendarClock className="h-3.5 w-3.5" />
+                      <span>Adiar compras hoje</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Lançamento manual de saldo DESTE dia (delta acumulativo) */}
           {details && onAddMovement && (

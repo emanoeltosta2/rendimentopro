@@ -1798,6 +1798,25 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
           };
           onUpdateSettings?.(nextSettings);
         }}
+        isAcquisitionDeferred={
+          selectedPointDetails
+            ? (settings.deferredAcquisitions ?? []).includes(selectedPointDetails.date)
+            : false
+        }
+        onToggleDeferAcquisitions={(date, deferred) => {
+          // Adiamento e por data: com ele ativo, o motor pula a compra naquele
+          // dia e o caixa acumula ate a proxima data com compras.
+          const current = new Set(settings.deferredAcquisitions ?? []);
+          if (deferred) {
+            current.add(date);
+          } else {
+            current.delete(date);
+          }
+          onUpdateSettings?.({
+            ...settings,
+            deferredAcquisitions: Array.from(current).sort(),
+          });
+        }}
       />
 
       {/* Modal para Definir Nova Meta / Resetar Ciclo */}
