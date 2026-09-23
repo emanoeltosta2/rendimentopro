@@ -99,22 +99,13 @@ export function deduplicateProducts(products: InvestmentProduct[]): { unique: In
   const duplicates: InvestmentProduct[] = [];
   const seen = new Set<string>();
 
-  for (const p of products) {
-    const nameClean = (p.name || '').trim().toLowerCase();
-    const investedVal = Number(p.investedAmount) || 0;
-    const startDateStr = (p.startDate || '').trim();
-    const dailyPct = Number(p.dailyPercentage) || 0;
-    const duration = Number(p.durationDays) || 0;
-    const statusStr = (p.status || 'active').trim().toLowerCase();
-
-    const key = `${nameClean}_${investedVal}_${startDateStr}_${dailyPct}_${duration}_${statusStr}`;
-
-    if (seen.has(key)) {
+    for (const p of products) {
+    if (seen.has(p.id)) {
       duplicates.push(p);
-    } else {
-      seen.add(key);
-      unique.push(p);
+      continue;
     }
+    seen.add(p.id);
+    unique.push(p);
   }
   return { unique, duplicates };
 }
