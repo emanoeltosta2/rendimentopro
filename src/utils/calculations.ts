@@ -56,7 +56,9 @@ export function normalizeSettings(raw: Partial<PlatformSettings> | null | undefi
         : undefined,
     dynamicBufferEnabled: s.dynamicBufferEnabled !== false,
     protectionProfile:
-      s.protectionProfile === 'conservative' || s.protectionProfile === 'aggressive'
+      s.protectionProfile === 'conservative' ||
+      s.protectionProfile === 'aggressive' ||
+      s.protectionProfile === 'accelerated'
         ? s.protectionProfile
         : 'balanced',
     manualBankInjection: Math.max(0, toFiniteNumber(s.manualBankInjection, 0)),
