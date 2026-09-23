@@ -74,6 +74,28 @@ export function normalizeSettings(raw: Partial<PlatformSettings> | null | undefi
     completedRoadmapDays: Array.isArray(s.completedRoadmapDays)
       ? s.completedRoadmapDays.filter((d): d is string => typeof d === 'string' && Boolean(d.trim()))
       : [],
+    // Lançamentos manuais: descarta entradas malformadas e normaliza as demais.
+    // `bank` pode ser negativo de propósito — não usar Math.max(0, ...) aqui.
+    manualCashMovements: Array.isArray(s.manualCashMovements)
+      ? s.manualCashMovements
+          .filter(
+            (m): m is NonNullable<typeof m> =>
+              Boolean(m) &&
+              typeof m.date === 'string' &&
+              Boolean(m.date.trim()) &&
+              Number.isFinite(Number(m.bank))
+          )
+          .map((m) => ({
+            id:
+              typeof m.id === 'string' && m.id.trim()
+                ? m.id
+                : `mv-${m.date.trim().split('T')[0]}-${Math.random().toString(36).slice(2, 8)}`,
+            date: m.date.trim().split('T')[0],
+            bank: Number(m.bank) || 0,
+            protection: Number.isFinite(Number(m.protection)) ? Number(m.protection) : 0,
+            note: typeof m.note === 'string' ? m.note.slice(0, 200) : undefined,
+          }))
+      : [],
   };
 }
 
