@@ -41,6 +41,14 @@ interface InternalContract {
   isReinvestment: boolean;
   isNewInvestment: boolean;
   isInitialPortfolio?: boolean;
+  /**
+   * Compra de hoje ainda não confirmada pelo usuário (prévia).
+   * Existe em `contracts` só para que os dias SEGUINTES (day > startDay)
+   * projetem renda com ela; no próprio dia de início ela não deve contar
+   * como "ativa" nem ser tratada como aquisição já efetivada, pois o caixa
+   * ainda não foi debitado de verdade (só "Marcar Concluído" faz isso).
+   */
+  isUnconfirmedPreview?: boolean;
 }
 
 /** Registro escalar por dia. Os detalhes pesados são reconstruídos sob demanda. */
@@ -1243,6 +1251,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           isReinvestment: true,
           isNewInvestment: false,
           isInitialPortfolio: false,
+          isUnconfirmedPreview: true,
         });
 
         return;
@@ -1593,36 +1602,24 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     const rec = dayRecords.find((r) => r.day === day);
     if (!rec) return null;
 
-    const pendingAcquisitionsToday: RoadmapContractSnapshot[] = projectedAcquisitions
-      .filter((acq) => acq.day === day && !canRealizeRoadmapAction(acq.date))
-      .map((acq) => ({
-        id: acq.id,
-        name: acq.name,
-        investedAmount: acq.totalSpent,
-        unitPrice: acq.unitPrice,
-        units: acq.units,
-        dailyPercentage: acq.dailyPercentage,
-        dailyYield: acq.dailyYieldAdded,
-        durationDays: acq.durationDays,
-        startDateFormatted: acq.dateFormatted,
-        endDateFormatted: formatDateBR(addDays(acq.date, acq.durationDays)),
-        startDay: acq.day,
-        endDay: acq.day + acq.durationDays,
-        daysRemaining: acq.durationDays,
-        returnCapitalAtEnd: acq.returnCapitalAtEnd,
-        isReinvestment: true,
-        isNewInvestment: true,
-        isInitialPortfolio: false,
-        isAcquiredToday: false,
-        acquisitionDay: acq.day,
-      }));
-
-    const acquisitionsToday = [
-      ...contracts
-        .filter((c) => c.startDay === day && !c.isInitialPortfolio)
-        .map((c) => toSnapshot(c, day)),
-      ...pendingAcquisitionsToday,
-    ];
+    // CORREÇÃO (bug de duplicidade): `buy()` grava toda compra planejada em
+    // `contracts` E em `projectedAcquisitions` na mesma chamada — inclusive
+    // no dia de hoje ainda não confirmado (ramo de prévia). Antes, esta
+    // função também recompunha uma segunda lista ("pendingAcquisitionsToday")
+    // a partir de `projectedAcquisitions` filtrando por
+    // `!canRealizeRoadmapAction(acq.date)`, mas essa condição só é verdadeira
+    // exatamente no caso "hoje, ainda não confirmado" — o mesmo caso já
+    // coberto por `contracts` abaixo. O resultado era a MESMA aquisição
+    // aparecendo duas vezes em `acquisitionsToday` (ex.: uma cota de R$100
+    // exibida como duas, sugerindo R$200 de compra com apenas R$108 livres),
+    // e pior: `handleCompleteRoadmapDay` no App usa essa lista para criar um
+    // produto por item, então "Marcar Concluído" chegava a materializar a
+    // compra duplicada de verdade na carteira. `contracts` já é a fonte
+    // completa (inclui a prévia de hoje), então a segunda lista é redundante
+    // e foi removida.
+    const acquisitionsToday = contracts
+      .filter((c) => c.startDay === day && !c.isInitialPortfolio)
+      .map((c) => toSnapshot(c, day));
 
     return {
       day: rec.day,
@@ -1665,17 +1662,25 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         ? Number(Math.min(100, (rec.dailyGross / targetDailyYield) * 100).toFixed(1))
         : 100,
       isGoalReached: rec.dailyGross >= targetDailyYield,
+      // Uma prévia de hoje ainda não confirmada (`isUnconfirmedPreview`) só
+      // conta como ativa/realizada a partir do dia SEGUINTE ao seu início —
+      // no próprio dia ela é só um plano, sem caixa debitado de verdade.
       activeContracts: contracts
-        .filter((c) => day >= c.startDay && day < c.endDay)
+        .filter((c) => day >= c.startDay && day < c.endDay && !(c.isUnconfirmedPreview && day === c.startDay))
         .map((c) => toSnapshot(c, day)),
       acquisitionsToday,
       newPurchasesToday: acquisitionsToday,
       newInvestmentsToday: acquisitionsToday,
       newInvestmentsUpToDay: contracts
-        .filter((c) => c.startDay <= day && (c.isNewInvestment || !c.isInitialPortfolio))
+        .filter(
+          (c) =>
+            c.startDay <= day &&
+            (c.isNewInvestment || !c.isInitialPortfolio) &&
+            !(c.isUnconfirmedPreview && day === c.startDay)
+        )
         .map((c) => toSnapshot(c, day)),
       allReinvestmentsUpToDay: contracts
-        .filter((c) => c.startDay <= day && !c.isInitialPortfolio)
+        .filter((c) => c.startDay <= day && !c.isInitialPortfolio && !(c.isUnconfirmedPreview && day === c.startDay))
         .map((c) => toSnapshot(c, day)),
       expiredContractsUpToDay: contracts
         .filter((c) => c.endDay <= day)

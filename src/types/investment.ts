@@ -365,6 +365,13 @@ export interface PortfolioOptimizationSummary {
 
 export interface PortfolioRoadmapSummary {
   currentDailyYield: number;
+  /**
+   * currentDailyYield somado ao que as compras planejadas para HOJE (ainda
+   * não confirmadas) vão acrescentar. O motor já calcula este valor
+   * (roadmap.ts); estava faltando aqui no contrato, então nenhuma tela podia
+   * lê-lo com segurança de tipos.
+   */
+  projectedDailyYield: number;
   targetDailyYield: number;
   percentOfGoalReached: number;
   /** True somente se a meta j├í foi atingida em data igual ou anterior a hoje. */
