@@ -1325,8 +1325,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
 
     if (!isAcquisitionDeferred && (roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
       for (let pass = 0; pass < 40; pass++) {
-        ... (resto fica exatamente igual)
-      for (let pass = 0; pass < 40; pass++) {
         const canConsolidateNow = hasMissingOptimalToBuy();
         if (deficitRemaining <= 0.001 && !canConsolidateNow) break;
 
