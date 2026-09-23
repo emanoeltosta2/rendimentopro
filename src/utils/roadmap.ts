@@ -379,6 +379,34 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   const dynamicBufferPercentages: number[] = [];
   const triggeredProtectionMilestones = new Set<string>();
 
+  /**
+   * Lançamentos manuais indexados por data, com migração dos campos escalares
+   * antigos (manualBankInjection / manualProtectionInjection). Eles viravam um
+   * aporte global datado em "hoje" — agora viram um lançamento na lista, para
+   * não perder o que você já havia configurado.
+   */
+  const manualMovementsByDate = new Map<string, { bank: number; protection: number }[]>();
+  const pushMovement = (date: string, bank: number, protection: number) => {
+    if (!date) return;
+    const list = manualMovementsByDate.get(date) ?? [];
+    list.push({ bank, protection });
+    manualMovementsByDate.set(date, list);
+  };
+
+  for (const mv of settings.manualCashMovements ?? []) {
+    pushMovement(mv.date, mv.bank ?? 0, mv.protection ?? 0);
+  }
+
+  const legacyBank = settings.manualBankInjection ?? 0;
+  const legacyProtection = settings.manualProtectionInjection ?? 0;
+  if (legacyBank !== 0 || legacyProtection !== 0) {
+    const legacyDate =
+      settings.manualBankInjectionDate ??
+      settings.manualProtectionInjectionDate ??
+      today;
+    pushMovement(legacyDate < baseStartDate ? baseStartDate : legacyDate, legacyBank, legacyProtection);
+  }
+
   const rawMilestones: PortfolioMilestone[] = [];
   const dayRecords: DayRecord[] = [];
   const unfundableExpenses: UnfundableExpense[] = [];
@@ -575,29 +603,47 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     const dateFormatted = formatDateBR(dateOnDay);
     const roadmapActionRealized = canRealizeRoadmapAction(dateOnDay);
 
-    // Aportes externos são eventos persistentes, com uma única data de entrada.
-    // Isso evita reinjetar o mesmo dinheiro a cada novo dia do roadmap: se um
-    // aporte de R$ 100 foi usado parcialmente ontem, amanhã a simulação reencena
-    // o aporte original e também a saída de ontem, preservando o saldo real.
-    const bankInjectionDate = settings.manualBankInjectionDate;
-    const protectionInjectionDate = settings.manualProtectionInjectionDate;
-    const shouldApplyBankInjection =
-      Boolean(settings.manualBankInjection && settings.manualBankInjection > 0) &&
-      ((bankInjectionDate && dateOnDay === bankInjectionDate) ||
-        (!bankInjectionDate && dateOnDay === today) ||
-        (day === 0 && !!bankInjectionDate && bankInjectionDate < baseStartDate));
-    const shouldApplyProtectionInjection =
-      Boolean(settings.manualProtectionInjection && settings.manualProtectionInjection > 0) &&
-      ((protectionInjectionDate && dateOnDay === protectionInjectionDate) ||
-        (!protectionInjectionDate && dateOnDay === today) ||
-        (day === 0 && !!protectionInjectionDate && protectionInjectionDate < baseStartDate));
+    // -------------------------------------------------------------------
+    // Lançamentos manuais de caixa DESTE dia (delta acumulativo)
+    //
+    // Cada lançamento tem a sua própria data e todos convivem. O delta é
+    // somado ao caixa do dia e permanece nos dias seguintes, porque o saldo
+    // carrega adiante no laço.
+    //
+    // O saldo em banco NÃO é truncado em zero: dinheiro externo gasto além
+    // do fluxo projetado é real e precisa aparecer, não sumir.
+    // -------------------------------------------------------------------
+    const movementsOnDay = manualMovementsByDate.get(dateOnDay) ?? [];
+    let manualBankDeltaToday = 0;
+    let manualProtectionDeltaToday = 0;
 
-    if (shouldApplyBankInjection) {
-      bankBalance = Number((bankBalance + (settings.manualBankInjection ?? 0)).toFixed(2));
+    for (const mv of movementsOnDay) {
+      manualBankDeltaToday += mv.bank;
+      manualProtectionDeltaToday += mv.protection ?? 0;
     }
-    if (shouldApplyProtectionInjection) {
+
+    if (manualBankDeltaToday !== 0) {
+      bankBalance = Number((bankBalance + manualBankDeltaToday).toFixed(2));
+      if (rawMilestones.length < MAX_MILESTONES) {
+        const isInflow = manualBankDeltaToday > 0;
+        rawMilestones.push({
+          date: dateOnDay,
+          dateFormatted,
+          dayNumber: day,
+          type: 'manual_cash',
+          title: `${isInflow ? 'Aporte externo' : 'Retirada manual'}: ${formatCurrency(Math.abs(manualBankDeltaToday))}`,
+          description: isInflow
+            ? `Você adicionou ${formatCurrency(manualBankDeltaToday)} de saldo externo neste dia. O valor entra no caixa livre e passa a integrar a rota a partir daqui.`
+            : `Você retirou ${formatCurrency(Math.abs(manualBankDeltaToday))} do saldo neste dia. O caixa livre cai pelo mesmo valor e a rota é recalculada a partir daqui.`,
+          amount: manualBankDeltaToday,
+          dailyYieldAfter: 0,
+        });
+      }
+    }
+
+    if (manualProtectionDeltaToday !== 0) {
       totalProtectedCashAccumulated = Number(
-        (totalProtectedCashAccumulated + (settings.manualProtectionInjection ?? 0)).toFixed(2)
+        (totalProtectedCashAccumulated + manualProtectionDeltaToday).toFixed(2)
       );
     }
 
@@ -756,7 +802,9 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       totalProtectedCashAccumulated = Number(
         Math.max(0, totalProtectedCashAccumulated - paidFromBlindagem).toFixed(2)
       );
-      bankBalance = Math.max(0, Number((bankBalance - exp.amount).toFixed(2)));
+      // Saldo pode ficar NEGATIVO: dinheiro externo gasto além do fluxo
+      // projetado é real e precisa aparecer, não ser truncado em zero.
+      bankBalance = Number((bankBalance - exp.amount).toFixed(2));
       expensesDeductedToday += exp.amount;
       expensesPaidFromBlindagemToday += paidFromBlindagem;
       expensesPaidFromFreeBankToday += paidFromFreeBank;

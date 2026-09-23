@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
+  Wallet,
   Calendar, 
   CheckCircle2, 
   Clock, 
@@ -16,7 +17,7 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
-import { RoadmapPointDetails, PlatformSettings } from '../types/investment';
+import { RoadmapPointDetails, PlatformSettings, ManualCashMovement } from '../types/investment';
 import { formatCurrency, formatNumberBR } from '../utils/calculations';
 import { useModal } from '../hooks/useModal';
 
@@ -31,6 +32,12 @@ interface RoadmapDayDetailsModalProps {
   isDayCompleted?: boolean;
   onCompleteDay?: (details: RoadmapPointDetails) => void;
   onUndoCompleteDay?: (date: string) => void;
+  /** Lançamentos manuais do dia, para exibir na seção de saldo. */
+  movementsForDay?: ManualCashMovement[];
+  /** Adiciona um lançamento (delta) neste dia do Roadmap. */
+  onAddMovement?: (date: string, delta: { bank: number; protection: number; note?: string }) => void;
+  /** Remove um lançamento já registrado. */
+  onRemoveMovement?: (movementId: string) => void;
 }
 
 export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
@@ -44,6 +51,9 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
   isDayCompleted,
   onCompleteDay,
   onUndoCompleteDay,
+  movementsForDay,
+  onAddMovement,
+  onRemoveMovement,
 }) => {
   type TabId = 'acquisitions' | 'active' | 'expenses' | 'expired';
 
@@ -59,6 +69,20 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<TabId>(() => pickInitialTab(details));
   const dialogRef = useModal(Boolean(details), onClose);
+
+  // Estado local do formulário de lançamento manual de saldo.
+  const [movementSign, setMovementSign] = useState<1 | -1>(1);
+  const [movementAmount, setMovementAmount] = useState<string>('');
+  const [movementProtection, setMovementProtection] = useState<string>('');
+  const [movementNote, setMovementNote] = useState<string>('');
+
+  // Zera o formulário ao trocar de dia, para o valor de um dia não vazar no outro.
+  useEffect(() => {
+    setMovementAmount('');
+    setMovementProtection('');
+    setMovementNote('');
+    setMovementSign(1);
+  }, [details?.date]);
 
   /**
    * CORREÇÃO: o modal fica montado permanentemente, então o inicializador do
@@ -259,6 +283,153 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Lançamento manual de saldo DESTE dia (delta acumulativo) */}
+          {details && onAddMovement && (
+            <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-900/70 shadow-2xs space-y-3">
+              <div className="flex items-start gap-2.5">
+                <div className="p-2 rounded-lg shrink-0 mt-0.5 border bg-slate-800 text-slate-300 border-slate-700">
+                  <Wallet className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm text-slate-100">Saldo manual deste dia</span>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full">
+                      {details.dateFormatted}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Registre aqui o dinheiro que entrou ou saiu da sua conta neste dia, por fora do fluxo de
+                    rendimentos. O valor é somado ao caixa e continua valendo nos dias seguintes. Use
+                    Retirada para valores negativos.
+                  </p>
+                </div>
+              </div>
+
+              {movementsForDay && movementsForDay.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  {movementsForDay.map((mv) => (
+                    <div
+                      key={mv.id}
+                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`font-bold shrink-0 ${mv.bank >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {mv.bank >= 0 ? '+' : '−'}{formatCurrency(Math.abs(mv.bank))}
+                        </span>
+                        {mv.protection ? (
+                          <span className="text-blue-300 shrink-0">· blindagem {formatCurrency(mv.protection)}</span>
+                        ) : null}
+                        {mv.note ? <span className="text-slate-400 truncate">· {mv.note}</span> : null}
+                      </div>
+                      {onRemoveMovement && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveMovement(mv.id)}
+                          className="text-slate-500 hover:text-rose-400 transition-colors shrink-0 p-0.5 rounded cursor-pointer"
+                          title="Remover este lançamento"
+                          aria-label={`Remover lançamento de ${formatCurrency(mv.bank)}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const amount = Number(String(movementAmount).replace(',', '.'));
+                  if (!Number.isFinite(amount) || amount <= 0) return;
+                  onAddMovement(details.date, {
+                    bank: movementSign * amount,
+                    protection: Math.max(0, Number(String(movementProtection).replace(',', '.')) || 0),
+                    note: movementNote.trim() || undefined,
+                  });
+                  setMovementAmount('');
+                  setMovementProtection('');
+                  setMovementNote('');
+                }}
+                className="space-y-2.5 pt-1 border-t border-slate-800"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Tipo</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setMovementSign(1)}
+                        className={`h-9 rounded-lg text-xs font-bold transition-all cursor-pointer ${movementSign === 1 ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}
+                      >
+                        + Entrada
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMovementSign(-1)}
+                        className={`h-9 rounded-lg text-xs font-bold transition-all cursor-pointer ${movementSign === -1 ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}
+                      >
+                        − Retirada
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Valor (R$)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500">R$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0,00"
+                        value={movementAmount}
+                        onChange={(e) => setMovementAmount(e.target.value)}
+                        className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Para blindagem (opcional)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500">R$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0,00"
+                        value={movementProtection}
+                        onChange={(e) => setMovementProtection(e.target.value)}
+                        className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-end gap-2.5">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Anotação (opcional)</label>
+                    <input
+                      type="text"
+                      maxLength={200}
+                      placeholder="Ex: aporte da reserva, retirada para conta pessoal..."
+                      value={movementNote}
+                      onChange={(e) => setMovementNote(e.target.value)}
+                      className="w-full h-9 px-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!(Number(String(movementAmount).replace(',', '.')) > 0)}
+                    className="h-9 px-4 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                    <span>Registrar neste dia</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Pagamento previsto para hoje: é uma pendência, não uma baixa financeira. */}
           {!isDayCompleted && details.expensesTodayList.length > 0 && details.expensesDeductedToday <= 0 && (

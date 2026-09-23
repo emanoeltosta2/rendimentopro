@@ -108,6 +108,18 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
     [roadmap]
   );
 
+  /**
+   * Mantém o painel do dia aberto em sincronia quando as configurações mudam.
+   * Sem isso, registrar um lançamento a partir do próprio modal não refletia
+   * no saldo exibido até fechar e reabrir o dia.
+   */
+  useEffect(() => {
+    if (!selectedPointDetails) return;
+    const refreshed = roadmap.getDayDetails(selectedPointDetails.day);
+    if (refreshed) setSelectedPointDetails(refreshed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roadmap]);
+
   // Mede a largura real do gráfico para compensar a escala do viewBox.
   const chartWrapRef = useRef<HTMLDivElement | null>(null);
   const [chartPixelWidth, setChartPixelWidth] = useState<number>(700);
@@ -1754,6 +1766,38 @@ export const PortfolioRoadmapCard: React.FC<PortfolioRoadmapCardProps> = ({
         }
         onCompleteDay={onCompleteRoadmapDay}
         onUndoCompleteDay={onUndoCompleteRoadmapDay}
+        movementsForDay={
+          selectedPointDetails
+            ? (settings.manualCashMovements ?? []).filter(
+                (mv) => mv.date === selectedPointDetails.date
+              )
+            : []
+        }
+        onAddMovement={(date, delta) => {
+          const nextSettings: PlatformSettings = {
+            ...settings,
+            manualCashMovements: [
+              ...(settings.manualCashMovements ?? []),
+              {
+                id: `mv-${date}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+                date,
+                bank: delta.bank,
+                protection: delta.protection || 0,
+                note: delta.note,
+              },
+            ],
+          };
+          onUpdateSettings?.(nextSettings);
+        }}
+        onRemoveMovement={(movementId) => {
+          const nextSettings: PlatformSettings = {
+            ...settings,
+            manualCashMovements: (settings.manualCashMovements ?? []).filter(
+              (mv) => mv.id !== movementId
+            ),
+          };
+          onUpdateSettings?.(nextSettings);
+        }}
       />
 
       {/* Modal para Definir Nova Meta / Resetar Ciclo */}
