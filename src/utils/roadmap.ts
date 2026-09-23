@@ -1327,134 +1327,75 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     }
 
     if (!isAcquisitionDeferred && (roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
-      for (let pass = 0; pass < 40; pass++) {
-        const canConsolidateNow = hasMissingOptimalToBuy();
-        if (deficitRemaining <= 0.001 && !canConsolidateNow) break;
+      /**
+       * Plano de compras do dia.
+       *
+       * Regra dura: a soma do que for comprado NUNCA pode passar do caixa livre
+       * (o "Alocável reinvestir" exibido no painel). Antes o laço comprava e um
+       * bloco de "cota base" comprava de novo depois, sem checar o caixa — o que
+       * produzia R$ 200 de sugestão com R$ 108 disponíveis.
+       *
+       * O plano é montado por DECOMPOSIÇÃO, antes de qualquer compra: cabe no
+       * caixa por construção, porque cada item só entra se ainda couber.
+       *
+       * Preferência: a MENOR QUANTIDADE de contratos. Escolhe sempre a MAIOR
+       * cota que caiba no que sobrou, até o déficit fechar ou o caixa acabar.
+       * Ex.: R$ 108 / déficit R$ 20  ->  1x R$ 100 (para).
+       *      R$  75 / déficit R$ 20  ->  1x R$ 50 + 1x R$ 25.
+       *      R$  30 / déficit R$ 20  ->  1x R$ 25.
+       */
+      const plannedPurchases: { template: ProductTemplate; units: number }[] = [];
+      let plannedCash = Number(currentFreeCash.toFixed(2));
+      let plannedDeficit = deficitRemaining;
 
-        const affordable = purchasableTemplates.filter((t) => t.investedAmount <= currentFreeCash);
-        if (affordable.length === 0) break;
-
-        let chosen: ProductTemplate;
-        let unitsToBuy = 1;
-
-        if (isGoalMaintenance) {
-          // 1. Se estamos em consolidação e temos cotas ótimas pendentes que cabem no caixa:
-          const affordableMissing = missingOptimalTemplates.filter(
-            (t) => t.investedAmount <= currentFreeCash
-          );
-
-          if (affordableMissing.length > 0) {
-            chosen = affordableMissing[0];
-            const optIdx = missingOptimalTemplates.indexOf(chosen);
-            if (optIdx !== -1) missingOptimalTemplates.splice(optIdx, 1);
-            unitsToBuy = 1;
-          } else {
-            // Se não há cotas ótimas ausentes acessíveis, só compra se houver déficit real de renda diária
-            if (deficitRemaining <= 0.001) break;
-
-            const validCandidates = affordable.filter(
-              (t) => tplDailyYield(t) <= targetDailyYield * 1.05
-            );
-            const pool = validCandidates.length > 0 ? validCandidates : affordable;
-
-            const sorted = [...pool].sort((a, b) => {
-              const yieldA = tplDailyYield(a);
-              const yieldB = tplDailyYield(b);
-
-              const overshootA = Math.max(0, yieldA - deficitRemaining);
-              const overshootB = Math.max(0, yieldB - deficitRemaining);
-
-              const excessiveA = overshootA > Math.max(10, deficitRemaining * 0.25);
-              const excessiveB = overshootB > Math.max(10, deficitRemaining * 0.25);
-
-              if (excessiveA !== excessiveB) {
-                return excessiveA ? 1 : -1;
-              }
-
-              if (Math.abs(yieldB - yieldA) > 0.01) {
-                return yieldB - yieldA;
-              }
-
-              return b.dailyPercentage - a.dailyPercentage || a.investedAmount - b.investedAmount;
-            });
-
-            chosen = sorted[0];
-            const yieldPerUnit = Math.max(0.01, tplDailyYield(chosen));
-            unitsToBuy = Math.min(
-              Math.ceil(deficitRemaining / yieldPerUnit),
-              Math.floor(currentFreeCash / chosen.investedAmount)
-            );
-          }
-        } else {
-          // Fase de ramp-up até a meta.
-          //
-          // Critério: fechar o déficit com o MENOR NÚMERO DE CONTRATOS.
-          // Antes a escolha era a cota mais barata que cobrisse o déficit, o
-          // que empilhava cotas pequenas (8x R$ 25) onde uma cota maior
-          // (1x R$ 100) entrega o mesmo rendimento com 1/8 da gestão.
-          const affordableCovering = affordable
-            .filter((t) => tplDailyYield(t) >= deficitRemaining)
-            .sort((a, b) => {
-              const unitsA = Math.ceil(deficitRemaining / Math.max(0.01, tplDailyYield(a)));
-              const unitsB = Math.ceil(deficitRemaining / Math.max(0.01, tplDailyYield(b)));
-              if (unitsA !== unitsB) return unitsA - unitsB;
-              const effA = tplDailyYield(a) / Math.max(0.01, a.investedAmount);
-              const effB = tplDailyYield(b) / Math.max(0.01, b.investedAmount);
-              if (Math.abs(effB - effA) > 1e-9) return effB - effA;
-              return a.investedAmount - b.investedAmount;
-            });
-
-          if (affordableCovering.length > 0) {
-            chosen = affordableCovering[0];
-          } else {
-            // Nenhuma cota cobre o déficit inteiro: usa a MAIOR que caiba,
-            // para chegar o mais perto possível da meta com o caixa de hoje.
-            chosen = [...affordable].sort((a, b) => b.investedAmount - a.investedAmount)[0];
-          }
-          const yieldPerUnit = Math.max(0.01, tplDailyYield(chosen));
-          unitsToBuy = Math.min(
-            Math.ceil(deficitRemaining / yieldPerUnit),
-            Math.floor(currentFreeCash / chosen.investedAmount)
-          );
+      // Cota ótima pendente (consolidação pós-meta) tem prioridade.
+      if (hasMissingOptimalToBuy()) {
+        const optimal = missingOptimalTemplates.find((t) => t.investedAmount <= plannedCash);
+        if (optimal) {
+          plannedPurchases.push({ template: optimal, units: 1 });
+          plannedCash = Number((plannedCash - optimal.investedAmount).toFixed(2));
+          plannedDeficit = Math.max(0, plannedDeficit - tplDailyYield(optimal));
+          const optIdx = missingOptimalTemplates.indexOf(optimal);
+          if (optIdx !== -1) missingOptimalTemplates.splice(optIdx, 1);
         }
+      }
 
-        if (unitsToBuy <= 0) break;
+      // Enquanto houver déficit e caixa, pega sempre a MAIOR cota que caiba.
+      let planGuard = 0;
+      while (plannedDeficit > 0.001 && plannedCash >= minCandidatePrice && planGuard < 40) {
+        planGuard += 1;
 
+        const fitting = purchasableTemplates
+          .filter((t) => t.investedAmount <= plannedCash && tplDailyYield(t) > 0)
+          .sort((a, b) => b.investedAmount - a.investedAmount);
+
+        if (fitting.length === 0) break;
+
+        const pick = fitting[0];
+        const yieldPerUnit = Math.max(0.01, tplDailyYield(pick));
+        const byDeficit = Math.ceil(plannedDeficit / yieldPerUnit);
+        const byCash = Math.floor(plannedCash / pick.investedAmount);
+        const units = Math.max(1, Math.min(byDeficit, byCash));
+
+        plannedPurchases.push({ template: pick, units });
+        plannedCash = Number((plannedCash - pick.investedAmount * units).toFixed(2));
+        plannedDeficit = Math.max(0, plannedDeficit - yieldPerUnit * units);
+      }
+
+      // Executa o plano. O buy() debita o caixa, então o total nunca estoura.
+      for (const item of plannedPurchases) {
         buy(
-          chosen.name,
-          chosen.investedAmount,
-          unitsToBuy,
-          chosen.dailyPercentage,
-          chosen.durationDays,
-          chosen.returnCapitalAtEnd ?? false,
-          chosen.id
+          item.template.name,
+          item.template.investedAmount,
+          item.units,
+          item.template.dailyPercentage,
+          item.template.durationDays,
+          item.template.returnCapitalAtEnd ?? false,
+          item.template.id
         );
 
         // Uma prévia representa uma única ação pendente do dia atual.
         if (previewTodayAction) break;
-      }
-
-      // Cota base como último recurso.
-      if (deficitRemaining > 0.001 && currentFreeCash >= reinvestmentUnit.price) {
-        const baseYield = Math.max(
-          0.01,
-          reinvestmentUnit.price * (reinvestmentUnit.dailyPercentage / 100)
-        );
-        const unitsToBuy = Math.min(
-          Math.ceil(deficitRemaining / baseYield),
-          Math.floor(currentFreeCash / reinvestmentUnit.price)
-        );
-        if (unitsToBuy > 0) {
-          buy(
-            reinvestmentUnit.name,
-            reinvestmentUnit.price,
-            unitsToBuy,
-            reinvestmentUnit.dailyPercentage,
-            reinvestmentUnit.durationDays,
-            reinvestmentUnit.returnCapitalAtEnd,
-            'base_unit'
-          );
-        }
       }
     }
 
