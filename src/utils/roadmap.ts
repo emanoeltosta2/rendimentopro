@@ -675,7 +675,13 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       // lista "Carteira Ativa" (calculada à parte, sem este bug). Enquanto o
       // dia não é confirmado, a prévia não tem nenhum efeito financeiro além
       // de aparecer na aba "Aquisições" do seu próprio dia.
-      if (c.isUnconfirmedPreview) continue;
+      // CORREÇÃO (renda da compra sugerida de hoje):
+      // Uma prévia não confirmada não pode ter NENHUM efeito no seu PRÓPRIO dia
+      // (o caixa ainda não foi debitado), mas a partir do dia seguinte ela já
+      // representa capital aplicado — a regra de 24h do produto. Antes, o
+      // `continue` incondicional a descartava em todos os dias, então a compra
+      // sugerida para hoje só aparecia na renda 2 dias depois (D+2), e não D+1.
+      if (c.isUnconfirmedPreview && day <= c.startDay) continue;
       if (day > c.startDay && day <= c.endDay) {
         dailyGross += c.investedAmount * (c.dailyPercentage / 100);
       }
@@ -1421,7 +1427,14 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         plannedDeficit = Math.max(0, plannedDeficit - yieldPerUnit * units);
       }
 
-      for (const item of plannedPurchases) {
+      // CORREÇÃO (duplicação): no dia ainda não confirmado (prévia de hoje) o
+      // plano é truncado ANTES de executar, para que a lista de aquisições do
+      // dia contenha exatamente a compra sugerida que o usuário enxerga.
+      const purchasesToExecute = previewTodayAction
+        ? plannedPurchases.slice(0, 1).map((p) => ({ ...p, units: 1 }))
+        : plannedPurchases;
+
+      for (const item of purchasesToExecute) {
         buy(
           item.template.name,
           item.template.investedAmount,
@@ -1432,7 +1445,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           item.template.id
         );
 
-        if (previewTodayAction) break;
       }
     }
 
@@ -1513,7 +1525,9 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     let activeContractsCountDisplay = 0;
     let activeInvestedAmountDisplay = 0;
     for (const c of contracts) {
-      if (c.isUnconfirmedPreview) continue;
+      // Mesma regra da Seção 1: a prévia de hoje não conta como ativa no seu
+      // próprio dia, mas passa a contar nos dias seguintes da projeção.
+      if (c.isUnconfirmedPreview && day <= c.startDay) continue;
       if (day >= c.startDay && day < c.endDay) {
         activeContractsCountDisplay += 1;
         activeInvestedAmountDisplay += c.investedAmount;
@@ -1643,9 +1657,27 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     // compra duplicada de verdade na carteira. `contracts` já é a fonte
     // completa (inclui a prévia de hoje), então a segunda lista é redundante
     // e foi removida.
+    // CORREÇÃO (duplicação ao "Marcar Concluído"):
+    // Um InternalContract agrega N cotas idênticas (`units`), mas o App cria
+    // UM produto por item desta lista. Um contrato de 4 cotas virava 1 produto
+    // com o valor cheio; pior, quando o plano do dia empilhava várias linhas,
+    // cada linha virava outro produto — o usuário via 1 compra sugerida e a
+    // conclusão do dia materializava 4 ativos.
+    //
+    // A lista agora é DEDUPLICADA e expandida de forma consistente: cada
+    // contrato do dia vira exatamente `units` entradas de UMA cota cada
+    // (unitPrice), que é o que o App deve criar como produto individual.
     const acquisitionsToday = contracts
       .filter((c) => c.startDay === day && !c.isInitialPortfolio)
-      .map((c) => toSnapshot(c, day));
+      .flatMap((c) => {
+        const unitCount = Math.max(1, Math.round(c.units || 1));
+        const unitContract: InternalContract = {
+          ...c,
+          units: 1,
+          investedAmount: Number((c.unitPrice || c.investedAmount / unitCount).toFixed(2)),
+        };
+        return Array.from({ length: unitCount }, () => toSnapshot(unitContract, day));
+      });
 
     return {
       day: rec.day,
@@ -1695,7 +1727,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       // aparece como plano em `acquisitionsToday`/`Aquisições`, e só entra
       // aqui de fato quando o usuário confirma o dia (o que remove a flag).
       activeContracts: contracts
-        .filter((c) => day >= c.startDay && day < c.endDay && !c.isUnconfirmedPreview)
+        .filter((c) => day >= c.startDay && day < c.endDay && !(c.isUnconfirmedPreview && day <= c.startDay))
         .map((c) => toSnapshot(c, day)),
       acquisitionsToday,
       newPurchasesToday: acquisitionsToday,
