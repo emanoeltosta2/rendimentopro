@@ -1427,14 +1427,14 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         plannedDeficit = Math.max(0, plannedDeficit - yieldPerUnit * units);
       }
 
-      // CORREÇÃO (duplicação): no dia ainda não confirmado (prévia de hoje) o
-      // plano é truncado ANTES de executar, para que a lista de aquisições do
-      // dia contenha exatamente a compra sugerida que o usuário enxerga.
-      const purchasesToExecute = previewTodayAction
-        ? plannedPurchases.slice(0, 1).map((p) => ({ ...p, units: 1 }))
-        : plannedPurchases;
+      // CORREÇÃO (prévia divergente da execução): o plano do dia é IDÊNTICO
+      // esteja o dia confirmado ou não. Truncar a prévia para uma cota fazia
+      // o card sugerir 1 compra e o "Marcar Concluído" — que recalcula com
+      // roadmapActionRealized = true e não passa mais por este truncamento —
+      // executar o plano inteiro (4 cotas). Se há caixa para 4, a sugestão
+      // mostra as 4.
+      for (const item of plannedPurchases) {
 
-      for (const item of purchasesToExecute) {
         buy(
           item.template.name,
           item.template.investedAmount,
