@@ -1348,10 +1348,17 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       }
     };
 
-    const hasMissingOptimalToBuy = () =>
+    /**
+     * CORREÇÃO (plano estourava o caixa): esta checagem testava sempre contra
+     * `currentFreeCash` (o saldo CHEIO do dia). Dentro da montagem do plano o
+     * saldo já foi parcialmente comprometido por compras anteriores, então a
+     * cota "ótima" era autorizada com dinheiro que não existia mais. Agora o
+     * saldo a considerar é sempre explícito.
+     */
+    const hasMissingOptimalToBuy = (availableCash: number = currentFreeCash) =>
       isGoalMaintenance &&
       activeCount > minPossibleContracts &&
-      missingOptimalTemplates.some((t) => t.investedAmount <= currentFreeCash);
+      missingOptimalTemplates.some((t) => t.investedAmount <= availableCash);
 
     // Ações de aporte/reinvestimento em dias já vencidos só entram na carteira
     // quando aquele dia foi efetivamente concluído. No dia de hoje, porém,
@@ -1395,7 +1402,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       let plannedCash = Number(currentFreeCash.toFixed(2));
       let plannedDeficit = deficitRemaining;
 
-      if (hasMissingOptimalToBuy()) {
+      if (hasMissingOptimalToBuy(plannedCash)) {
         const optimal = missingOptimalTemplates.find((t) => t.investedAmount <= plannedCash);
         if (optimal) {
           plannedPurchases.push({ template: optimal, units: 1 });
@@ -1417,24 +1424,44 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         if (fitting.length === 0) break;
 
         const pick = fitting[0];
+
+        /**
+         * CORREÇÃO (plano estourava o caixa): o laço entrava exigindo apenas
+         * `plannedCash >= minCandidatePrice` — o preço da MENOR cota do
+         * catálogo, não o da cota escolhida. Se a escolhida custa mais do que
+         * o saldo, não há compra possível nesta passada.
+         */
+        if (pick.investedAmount > plannedCash) break;
+
         const yieldPerUnit = Math.max(0.01, tplDailyYield(pick));
         const byDeficit = Math.ceil(plannedDeficit / yieldPerUnit);
         const byCash = Math.floor(plannedCash / pick.investedAmount);
-        const units = Math.max(1, Math.min(byDeficit, byCash));
+
+        /**
+         * CORREÇÃO (plano estourava o caixa): era `Math.max(1, ...)`, que
+         * FORÇAVA a compra de ao menos uma cota mesmo sem saldo para ela — e
+         * `byDeficit` usa `Math.ceil`, então um déficit de R$ 60 com cota de
+         * R$ 50/dia pedia 2 cotas (R$ 500) ainda que o caixa só cobrisse uma.
+         * O caixa (`byCash`) agora é teto absoluto: sem cota inteira que caiba,
+         * o plano encerra em vez de estourar o saldo.
+         */
+        const units = Math.min(byDeficit, byCash);
+        if (units < 1) break;
 
         plannedPurchases.push({ template: pick, units });
         plannedCash = Number((plannedCash - pick.investedAmount * units).toFixed(2));
         plannedDeficit = Math.max(0, plannedDeficit - yieldPerUnit * units);
       }
 
-      // CORREÇÃO (prévia divergente da execução): o plano do dia é IDÊNTICO
-      // esteja o dia confirmado ou não. Truncar a prévia para uma cota fazia
-      // o card sugerir 1 compra e o "Marcar Concluído" — que recalcula com
-      // roadmapActionRealized = true e não passa mais por este truncamento —
-      // executar o plano inteiro (4 cotas). Se há caixa para 4, a sugestão
-      // mostra as 4.
+      /**
+       * CORREÇÃO (prévia divergente da execução): o plano do dia é IDÊNTICO
+       * esteja o dia confirmado ou não. Truncar a prévia para uma única cota
+       * fazia o card sugerir 1 compra enquanto "Marcar Concluído" — que
+       * recalcula com `roadmapActionRealized = true` e portanto não passa mais
+       * por este truncamento — executava o plano inteiro. Se o caixa comporta
+       * N cotas, a sugestão mostra as N que serão efetivadas.
+       */
       for (const item of plannedPurchases) {
-
         buy(
           item.template.name,
           item.template.investedAmount,
