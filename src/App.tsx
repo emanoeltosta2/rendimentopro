@@ -28,6 +28,7 @@ import {
   deduplicateTemplates
 } from './utils/storage';
 import { getTodayString, isProductActiveOnDate, normalizeSettings } from './utils/calculations';
+import { normalizeProductName } from './utils/roadmap';
 import { createId } from './utils/id';
 import { useAuth } from './services/AuthContext';
 import { firestoreSync } from './services/firestoreSync';
@@ -511,23 +512,51 @@ export default function App() {
        * com o mesmo nome começando nesta data, a compra daquele dia já foi
        * feita e o motor não cria outra.
        */
-      const manualKeysToday = new Set(
+      /**
+       * CORRECAO (produto duplicado ao concluir o dia).
+       *
+       * A versao anterior comparava o NOME CRU e ignorava os produtos que o
+       * proprio Roadmap criou (`!p.roadmapAcquisitionDate`), o que deixava
+       * passar exatamente o caso que acontece na pratica:
+       *
+       *   motor grava a previa como  "NW765H"
+       *   motor grava a compra como  "Reinvestimento (NW765H)"
+       *
+       * Mesma cota, mesmo valor, mesma data — mas strings diferentes, entao
+       * o filtro aceitava as duas e o clique criava DOIS produtos. O par
+       * NW765H / Reinvestimento (NW765H) do painel vinha daqui.
+       *
+       * Agora a chave e `nome normalizado | valor | data`, aplicada a TODOS
+       * os produtos daquela data (inclusive os criados pelo Roadmap). Isso
+       * fecha dois buracos de uma vez:
+       *
+       *   1. o rotulo de origem deixa de criar um falso produto novo;
+       *   2. reexecutar o dia (desfazer e concluir de novo, ou um novo
+       *      snapshot do Firestore seguido de novo clique) nao duplica nada,
+       *      porque o que ja existe ocupa a chave.
+       */
+      const acquisitionKey = (name: string, amount: number) =>
+        `${normalizeProductName(name)}|${Number(amount).toFixed(2)}|${date}`;
+
+      const takenKeysToday = new Set(
         products
-          .filter(
-            (p) =>
-              p.startDate === date &&
-              !p.roadmapAcquisitionDate &&
-              p.status !== 'completed'
-          )
-          .map((p) => p.name.trim().toLowerCase())
+          .filter((p) => p.startDate === date && p.status !== 'completed')
+          .map((p) => acquisitionKey(p.name, p.investedAmount))
       );
 
       const projected = isDeferred
         ? []
         : (details.acquisitionsToday ?? details.newPurchasesToday ?? []);
-      const acquisitions = projected.filter(
-        (acq) => !manualKeysToday.has((acq.name || '').trim().toLowerCase())
-      );
+
+      const acquisitions: typeof projected = [];
+      for (const acq of projected) {
+        const key = acquisitionKey(acq.name, acq.investedAmount);
+        // Ja existe na carteira nesta data (manual ou criado pelo Roadmap).
+        if (takenKeysToday.has(key)) continue;
+        // E o proprio lote nao repete o mesmo item duas vezes.
+        takenKeysToday.add(key);
+        acquisitions.push(acq);
+      }
 
       if (acquisitions.length > 0) {
 
