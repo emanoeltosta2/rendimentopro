@@ -1239,6 +1239,30 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
        * materializa de verdade e o botao "Marcar Concluido".
        */
       if (!roadmapActionRealized) {
+        /**
+         * CORRECAO (previa estourava o orcamento do dia):
+         *
+         * Este ramo saía com `return` ANTES de debitar qualquer orçamento — e,
+         * como a lista de compras é montada por DECOMPOSIÇÃO, cada item do
+         * plano entrava aqui como se o dia tivesse caixa infinito. O sintoma
+         * não era teórico: o `while` que monta o plano aprova as N cotas que
+         * cabem no caixa CHEIO, e todas eram empilhadas na prévia dia após
+         * dia, porque nada consumia o orçamento. Também deixava `deficitRemaining`
+         * intacto, então o déficit "pago" continuava sendo planejado de novo.
+         *
+         * Agora a prévia consome o MESMO orçamento que a confirmação: se a
+         * cota não cabe no caixa livre restante, a prévia não entra — e o
+         * laço do plano encerra por caixa, como aconteceria ao confirmar.
+         */
+        const previewCost = Number((unitPrice * units).toFixed(2));
+
+        if (previewCost > currentFreeCash + 0.001) {
+          return false;
+        }
+
+        currentFreeCash = Math.max(0, Number((currentFreeCash - previewCost).toFixed(2)));
+        deficitRemaining = Math.max(0, deficitRemaining - addedDaily);
+
         projectedAcquisitions.push({
           id: `planned_d${day}_${templateId}`,
           name,
@@ -1271,7 +1295,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           isUnconfirmedPreview: true,
         });
 
-        return;
+        return true;
       }
 
       // Debita o caixa livre a cada compra. Sem isso, o laço reaproveitava o
@@ -1333,6 +1357,8 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         isInitialPortfolio: false,
       });
 
+      // CORRECAO (marco duplicado): uma compra agregada de N cotas gerava N
+      // marcos identicos (o mesmo titulo repetido N vezes no mesmo dia).
       if (rawMilestones.length < MAX_MILESTONES) {
         rawMilestones.push({
           date: dateOnDay,
@@ -1387,6 +1413,9 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       }
     }
 
+    // CORRECAO (previa estourava o orcamento): a previa de hoje respeita o
+    // caixa livre do dia, exatamente como a confirmacao. Antes, o ramo de
+    // previa dentro de `buy()` empilhava contratos sem debitar orcamento.
     if (!isAcquisitionDeferred && (roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
       /**
        * Plano de compras do dia.
@@ -1462,7 +1491,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
        * N cotas, a sugestão mostra as N que serão efetivadas.
        */
       for (const item of plannedPurchases) {
-        buy(
+        const accepted = buy(
           item.template.name,
           item.template.investedAmount,
           item.units,
@@ -1472,6 +1501,11 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           item.template.id
         );
 
+        // CORRECAO (previa estourava o orcamento): `buy` devolve `false`
+        // quando a cota nao cabe no caixa restante da previa. O plano foi
+        // montado contra o orcamento cheio do dia, entao o primeiro item que
+        // nao cabe encerra a lista — nao ha nada menor depois dele.
+        if (accepted === false) break;
       }
     }
 
