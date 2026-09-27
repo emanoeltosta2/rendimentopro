@@ -108,6 +108,30 @@ const MAX_MILESTONES = 150;
 const MAX_EXPENSE_WAIT_DAYS = 45;
 
 /**
+ * Remove o rotulo de origem do nome de um produto do Roadmap.
+ *
+ * O motor grava a compra do dia com prefixo (`Reinvestimento (NW765H)`,
+ * `Novo investimento (X)`, `Otimizacao da carteira (X)`), enquanto a
+ * pre-visualizacao grava o nome cru (`NW765H`). Sao a MESMA cota: para
+ * qualquer comparacao entre produtos — dedupe, agrupamento, conciliacao —
+ * os dois precisam colapsar na mesma chave.
+ *
+ * @example
+ *   normalizeProductName('Reinvestimento (NW765H)') // 'nw765h'
+ *   normalizeProductName('  NW765H  ')              // 'nw765h'
+ */
+export function normalizeProductName(name: string | undefined | null): string {
+  return (name ?? '')
+    .toLowerCase()
+    .replace(/^novo investimento\s*\(/i, '')
+    .replace(/^reinvestimento\s*\(/i, '')
+    .replace(/^manutenção da meta\s*\(/i, '')
+    .replace(/^otimização da carteira\s*\(/i, '')
+    .replace(/\)$/i, '')
+    .trim();
+}
+
+/**
  * Encontra a combinação ótima de templates para atingir e manter a meta diária
  * com a menor quantidade possível de produtos ativos simultâneos na carteira.
  */
@@ -297,6 +321,15 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
 
   const todayOffset = diffInDays(baseStartDate, today);
 
+  /**
+   * Normaliza o nome de um produto/cota para comparacao.
+   *
+   * EXPORTADO como funcao de modulo para que o App use EXATAMENTE a mesma
+   * regra ao deduplicar. Antes o App reimplementava uma versao mais fraca
+   * (apenas trim + lowercase), o que fazia `NW765H` e
+   * `Reinvestimento (NW765H)` — a MESMA cota — serem tratados como dois
+   * produtos distintos e materializados em dobro ao concluir o dia.
+   */
   const getProductNormalizedKey = (name: string): string =>
     name
       .toLowerCase()
