@@ -28,7 +28,11 @@ import {
   deduplicateTemplates
 } from './utils/storage';
 import { getTodayString, isProductActiveOnDate, normalizeSettings } from './utils/calculations';
-import { normalizeProductName } from './utils/roadmap';
+import {
+  planRoadmapDayCompletion,
+  applyRoadmapDayCompletion,
+  applyRoadmapDayReversal,
+} from './utils/roadmapDayActions';
 import { createId } from './utils/id';
 import { useAuth } from './services/AuthContext';
 import { firestoreSync } from './services/firestoreSync';
@@ -469,196 +473,131 @@ export default function App() {
     [settings, persistSettings]
   );
 
+  /**
+   * Conclui (ou reconclui) o dia do Roadmap.
+   *
+   * CORREÇÃO PRINCIPAL — duplicação de aquisições ao concluir o dia:
+   *
+   *  1. O plano de compras é montado UMA vez, por uma função pura, e é o
+   *     MESMO que a tela exibiu como sugestão. Antes, a conclusão recalculava
+   *     o plano por conta própria e podia materializar cotas diferentes das
+   *     que o usuário aprovou.
+   *  2. Cada cota tem identidade própria (`acquisitionId`). Concluir o mesmo
+   *     dia duas vezes — clique duplo, desfazer/concluir, novo snapshot da
+   *     nuvem seguido de novo clique — encontra os mesmos ids e NÃO cria nada
+   *     na segunda vez. Antes a decisão era por "nome + valor + data", que
+   *     quebrava assim que o rótulo de origem mudava o nome do produto.
+   *  3. O orçamento é validado ANTES de gravar: se o plano não cabe no saldo
+   *     livre do dia, nada é criado (nunca metade das compras).
+   *  4. Todo efeito colateral (nuvem) passou a acontecer FORA dos
+   *     atualizadores de estado, com o resultado já calculado. O React
+   *     reexecuta atualizadores, e era isso que duplicava gravações.
+   */
   const handleCompleteRoadmapDay = useCallback(
     (details: RoadmapPointDetails) => {
-      const date = details.date;
+      const plan = planRoadmapDayCompletion({
+        details,
+        products,
+        expenses: details.expensesTodayList.length > 0 ? details.expensesTodayList : expenses,
+        settings,
+      });
 
-      // 1. Se o dia tinha despesas, marca como pagas
-      const expensesToPay = details.expensesTodayList.filter((e) => !e.isPaid);
-      if (expensesToPay.length > 0) {
-        setExpenses((prev) => {
-          const idsToPay = new Set(expensesToPay.map((e) => e.id));
-          return prev.map((e) => {
-            if (idsToPay.has(e.id)) {
-              const updated = {
-                ...e,
-                isPaid: true,
-                paidDate: date,
-                roadmapPaidDate: date,
-              };
-              if (user) {
-                trackWrite(firestoreSync.saveExpense(user.uid, updated));
-              }
-              return updated;
-            }
-            return e;
-          });
+      const operations = applyRoadmapDayCompletion(plan, {
+        products,
+        expenses: expenses.map((e) => ({
+          id: e.id,
+          title: e.title,
+          amount: e.amount,
+          isPaid: e.isPaid,
+          paidDate: e.paidDate,
+          roadmapPaidDate: e.roadmapPaidDate,
+        })),
+        settings,
+      });
+
+      // 1. Despesas do dia — atualiza o estado e grava a nuvem FORA do updater.
+      if (operations.expensesToMarkPaid.length > 0) {
+        const paidById = new Map(operations.expensesToMarkPaid.map((p) => [p.id, p]));
+        const updatedExpenses = expenses.map((e) => {
+          const paid = paidById.get(e.id);
+          return paid ? { ...e, isPaid: true, paidDate: paid.paidDate, roadmapPaidDate: paid.roadmapPaidDate } : e;
         });
-      }
-
-      // Se o usuário adiou as compras deste dia, nenhuma cota é criada — mas as
-      // despesas seguem sendo pagas e a data continua sendo marcada como concluída.
-      const isDeferred = (settings.deferredAcquisitions ?? []).includes(date);
-
-      /**
-       * Evita duplicar compra que o usuário já registrou à mão.
-       *
-       * O motor projeta as compras do dia sem saber o que foi cadastrado
-       * manualmente. Se você lançou um NW354 de R$ 25 naquele dia, concluir o
-       * dia criaria um SEGUNDO NW354 — e a renda diária subiria sozinha, sem
-       * dinheiro novo ter entrado.
-       *
-       * A checagem é por nome + data de início: se já existe um contrato ativo
-       * com o mesmo nome começando nesta data, a compra daquele dia já foi
-       * feita e o motor não cria outra.
-       */
-      /**
-       * CORRECAO (produto duplicado ao concluir o dia).
-       *
-       * A versao anterior comparava o NOME CRU e ignorava os produtos que o
-       * proprio Roadmap criou (`!p.roadmapAcquisitionDate`), o que deixava
-       * passar exatamente o caso que acontece na pratica:
-       *
-       *   motor grava a previa como  "NW765H"
-       *   motor grava a compra como  "Reinvestimento (NW765H)"
-       *
-       * Mesma cota, mesmo valor, mesma data — mas strings diferentes, entao
-       * o filtro aceitava as duas e o clique criava DOIS produtos. O par
-       * NW765H / Reinvestimento (NW765H) do painel vinha daqui.
-       *
-       * Agora a chave e `nome normalizado | valor | data`, aplicada a TODOS
-       * os produtos daquela data (inclusive os criados pelo Roadmap). Isso
-       * fecha dois buracos de uma vez:
-       *
-       *   1. o rotulo de origem deixa de criar um falso produto novo;
-       *   2. reexecutar o dia (desfazer e concluir de novo, ou um novo
-       *      snapshot do Firestore seguido de novo clique) nao duplica nada,
-       *      porque o que ja existe ocupa a chave.
-       */
-      const acquisitionKey = (name: string, amount: number) =>
-        `${normalizeProductName(name)}|${Number(amount).toFixed(2)}|${date}`;
-
-      const takenKeysToday = new Set(
-        products
-          .filter((p) => p.startDate === date && p.status !== 'completed')
-          .map((p) => acquisitionKey(p.name, p.investedAmount))
-      );
-
-      const projected = isDeferred
-        ? []
-        : (details.acquisitionsToday ?? details.newPurchasesToday ?? []);
-
-      const acquisitions: typeof projected = [];
-      for (const acq of projected) {
-        const key = acquisitionKey(acq.name, acq.investedAmount);
-        // Ja existe na carteira nesta data (manual ou criado pelo Roadmap).
-        if (takenKeysToday.has(key)) continue;
-        // E o proprio lote nao repete o mesmo item duas vezes.
-        takenKeysToday.add(key);
-        acquisitions.push(acq);
-      }
-
-      if (acquisitions.length > 0) {
-
-        const newProducts: InvestmentProduct[] = acquisitions.map((acq) => ({
-          id: createId('prod'),
-          name: acq.name,
-          investedAmount: acq.investedAmount,
-          dailyPercentage: acq.dailyPercentage,
-          durationDays: acq.durationDays,
-          startDate: date,
-          status: 'active' as const,
-          returnCapitalAtEnd: acq.returnCapitalAtEnd ?? false,
-          category: 'Reinvestimento do Roadmap',
-          notes: `Adquirido via conclusão do Roadmap no Dia ${details.day} (${details.dateFormatted})`,
-          roadmapAcquisitionDate: date,
-          roadmapAcquisitionDay: details.day,
-        }));
-
-        setProducts((prev) => [...newProducts, ...prev]);
-
+        setExpenses(updatedExpenses);
         if (user) {
-          for (const np of newProducts) {
-            trackWrite(firestoreSync.saveProduct(user.uid, np));
+          for (const item of updatedExpenses) {
+            if (paidById.has(item.id)) trackWrite(firestoreSync.saveExpense(user.uid, item));
           }
         }
       }
 
-      // 3. Marca a data como concluída em settings.completedRoadmapDays
-      const currentCompleted = settings.completedRoadmapDays || [];
-      if (!currentCompleted.includes(date)) {
-        persistSettings({
-          ...settings,
-          completedRoadmapDays: [...currentCompleted, date],
+      // 2. Cotas do dia — validado o orçamento, cria os produtos.
+      if (operations.productsToCreate.length > 0) {
+        const novos = operations.productsToCreate;
+        setProducts((prev) => {
+          const idsExistentes = new Set(prev.map((p) => p.acquisitionId).filter(Boolean));
+          const semDuplicata = novos.filter((p) => !idsExistentes.has(p.acquisitionId));
+          return semDuplicata.length > 0 ? [...semDuplicata, ...prev] : prev;
         });
+        if (user) {
+          for (const np of novos) trackWrite(firestoreSync.saveProduct(user.uid, np));
+        }
       }
+
+      // 3. Marca a data como concluída (idempotente).
+      persistSettings({ ...settings, completedRoadmapDays: operations.completedDays });
     },
-    [settings, user, trackWrite, persistSettings]
+    [settings, products, expenses, user, trackWrite, persistSettings]
   );
 
   const handleUndoCompleteRoadmapDay = useCallback(
     (date: string) => {
-      const currentCompleted = settings.completedRoadmapDays || [];
+      if (!(settings.completedRoadmapDays ?? []).includes(date)) return;
 
-      if (!currentCompleted.includes(date)) return;
+      // Desmarcar um dia desfaz EXATAMENTE o que aquele dia criou: os produtos
+      // com a identidade daquele dia (`acq_<data>_*`) e as despesas que o
+      // próprio Roadmap quitou. Nunca remove lançamento feito à mão.
+      const operations = applyRoadmapDayReversal(date, {
+        products,
+        expenses: expenses.map((e) => ({
+          id: e.id,
+          title: e.title,
+          amount: e.amount,
+          isPaid: e.isPaid,
+          paidDate: e.paidDate,
+          roadmapPaidDate: e.roadmapPaidDate,
+        })),
+        settings,
+      });
 
-      // Desmarcar um dia precisa desfazer também os efeitos reais que foram
-      // aplicados quando ele foi concluído. Caso contrário o marcador mudaria,
-      // mas o produto continuaria rendendo e a dívida continuaria como paga.
-      const productsToRollback = products.filter((p) =>
-        p.roadmapAcquisitionDate === date ||
-        (p.category === 'Reinvestimento do Roadmap' &&
-          typeof p.notes === 'string' &&
-          p.notes.includes(`(${date.split('-').reverse().join('/')})`))
-      );
-
-      if (productsToRollback.length > 0) {
-        const rollbackIds = new Set(productsToRollback.map((p) => p.id));
-        setProducts((prev) => prev.filter((p) => !rollbackIds.has(p.id)));
-
+      if (operations.productIdsToRemove.length > 0) {
+        const remover = new Set(operations.productIdsToRemove);
+        setProducts((prev) => prev.filter((p) => !remover.has(p.id)));
         if (user) {
-          for (const product of productsToRollback) {
-            trackWrite(firestoreSync.deleteProduct(user.uid, product.id));
+          for (const id of operations.productIdsToRemove) {
+            trackWrite(firestoreSync.deleteProduct(user.uid, id));
           }
         }
       }
 
-      // Só desfazemos despesas que foram efetivamente quitadas por este
-      // dia do Roadmap. O campo roadmapPaidDate é persistido no Firestore;
-      // portanto a regra continua funcionando mesmo depois de um snapshot
-      // da nuvem substituir o estado local. Nunca desfazemos uma quitação
-      // manual feita pelo usuário.
-      const expensesToRollback = expenses.filter(
-        (e) => e.roadmapPaidDate === date && e.paidDate === date
-      );
-
-      if (expensesToRollback.length > 0) {
-        const rollbackIds = new Set(expensesToRollback.map((e) => e.id));
-        const restoredExpenses = expensesToRollback.map((expense) => ({
-          ...expense,
-          isPaid: false,
-          paidDate: undefined,
-          roadmapPaidDate: undefined,
-        }));
-
-        setExpenses((prev) =>
-          prev.map((e) => {
-            const restored = restoredExpenses.find((candidate) => candidate.id === e.id);
-            return restored && rollbackIds.has(e.id) ? restored : e;
-          })
-        );
-
+      if (operations.expensesToRestore.length > 0) {
+        const restaurar = new Map(operations.expensesToRestore.map((r) => [r.id, r]));
+        const restauradas = expenses.map((e) => {
+          const r = restaurar.get(e.id);
+          if (!r) return e;
+          return { ...e, isPaid: false, paidDate: undefined, roadmapPaidDate: undefined };
+        });
+        setExpenses(restauradas);
         if (user) {
-          for (const restored of restoredExpenses) {
-            trackWrite(firestoreSync.saveExpense(user.uid, restored));
+          for (const item of restauradas) {
+            if (restaurar.has(item.id)) trackWrite(firestoreSync.saveExpense(user.uid, item));
           }
         }
       }
 
       persistSettings({
         ...settings,
-        completedRoadmapDays: currentCompleted.filter((d) => d !== date),
-        deferredAcquisitions: (settings.deferredAcquisitions ?? []).filter((d) => d !== date),
+        completedRoadmapDays: operations.completedDays,
+        deferredAcquisitions: operations.deferredDays,
       });
     },
     [settings, products, expenses, user, trackWrite, persistSettings]
