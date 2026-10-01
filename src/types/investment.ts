@@ -16,6 +16,18 @@ export interface InvestmentProduct {
   /** Metadados internos: produto criado ao concluir uma ação do Roadmap. */
   roadmapAcquisitionDate?: string;
   roadmapAcquisitionDay?: number;
+  /**
+   * IDENTIDADE da operação que criou este produto.
+   *
+   * Formato: `acq_<YYYY-MM-DD>_<sequência>`, gerado de forma determinística
+   * pelo plano do dia. É o ÚNICO critério usado para decidir se uma cota já
+   * foi comprada — nunca a semelhança entre nome/valor/data, que confundia
+   * duas compras legítimas iguais e deixava passar duplicatas quando o
+   * rótulo de origem mudava o nome do produto.
+   */
+  acquisitionId?: string;
+  /** Posição da cota dentro do plano do dia (0-based, mesma origem do id). */
+  acquisitionSequence?: number;
 }
 
 export interface ProductTemplate {
