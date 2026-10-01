@@ -1467,82 +1467,110 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     // previa dentro de `buy()` empilhava contratos sem debitar orcamento.
     if (!isAcquisitionDeferred && (roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
       /**
-       * Plano de compras do dia.
-       *
        * =====================================================================
-       * CORREÇÃO (motor comprava fora do plano sugerido)
+       * Plano de compras do dia — composição inteligente com travas de segurança
        * =====================================================================
        *
-       * O plano era montado em DUAS etapas independentes:
+       * OBJETIVO: fechar o déficit de renda do dia seguinte (a meta diária
+       * menos o que a carteira renderá amanhã) usando o caixa disponível.
        *
-       *   1. consumia UMA cota de `missingOptimalTemplates` (a carteira ideal);
-       *   2. um `while` de déficit comprava, em seguida, as MAIORES cotas que
-       *      coubessem no caixa — sem consultar `missingOptimalTemplates` nem
-       *      o que a carteira já possui.
+       * TRÊS TRAVAS SIMULTÂNEAS, e nenhuma delas pode ser satisfeita sozinha:
        *
-       * A etapa 2 recomprava cotas que o próprio dia já havia comprado: o
-       * `NW354` de R$ 25 nascia de novo em outra data, o `NW900E` de R$ 100
-       * entrava sem nunca ter aparecido na sugestão exibida, e a contagem de
-       * produtos ativos subia mais do que o número de "Aquisições" mostrava.
+       *   a) IDENTIDADE — cada cota entra no plano UMA vez. O plano é montado
+       *      sobre um "orçamento" próprio e cada template escolhido é retirado
+       *      do pool do dia. É isso que impede o NW354 de R$ 25 de ser comprado
+       *      duas vezes no mesmo dia, sem restringir quais cotas podem ser
+       *      compradas.
        *
-       * Agora existe UMA fonte para o dia: `missingOptimalTemplates`. Tanto a
-       * primeira escolha quanto o preenchimento de déficit retiram dela, e a
-       * cota só é comprada enquanto ainda estiver na lista — ou seja, enquanto
-       * ela de fato faltar para a carteira naquele dia.
+       *   b) CAIXA LIVRE — a soma do plano nunca passa de `currentFreeCash`,
+       *      que já é o saldo em banco MENOS a reserva para contas com
+       *      vencimento próximo MENOS a blindagem acumulada:
        *
-       * Regra dura mantida: a soma do plano NUNCA passa do caixa livre (o
-       * "Alocável reinvestir" do painel). O plano é montado por DECOMPOSIÇÃO,
-       * antes de qualquer compra, então cabe no caixa por construção.
+       *        currentFreeCash = bankBalance - reservedCashForPending - totalProtectedCashAccumulated
+       *
+       *      Ou seja: o fundo de segurança (blindagem) e o caixa das despesas
+       *      agendadas nunca são usados para comprar. A blindagem é intocável
+       *      por construção, não por uma checagem adicional.
+       *
+       *   c) BLINDAGEM DINÂMICA — o buffer do dia (`effectiveDynamicBufferPct`)
+       *      é uma retenção sobre o FLUXO que entra no banco (Passo 4c), e não
+       *      sobre o caixa já livre. Ele já foi descontado antes de o saldo
+       *      chegar aqui, então comprar dentro de `currentFreeCash` respeita a
+       *      blindagem do dia. O que a trava faz é impedir que uma compra
+       *      consuma o que a blindagem reteve: como a retenção sai do fluxo e
+       *      não do caixa livre, o plano não pode "furar" o cofre para comprar.
+       *
+       * ESTRATÉGIA (escolhida pelo usuário): comprar o MÁXIMO que o caixa
+       * permite no dia, fechando o déficit o quanto antes, sem nunca cruzar
+       * as travas acima. A escolha é pela cota mais eficiente em % ao dia e,
+       * em empate, pela MENOR cota — imobilizar o mínimo por real de renda
+       * gerada.
        */
       const plannedPurchases: { template: ProductTemplate; units: number }[] = [];
       let plannedCash = Number(currentFreeCash.toFixed(2));
       let plannedDeficit = deficitRemaining;
 
       /**
-       * Retira a cota da lista de pendências assim que ela entra no plano.
-       * Devolver `false` significa "não falta mais" — e o laço encerra em vez
-       * de recomprar a mesma cota.
+       * Guarda as cotas do dia que ainda podem ser compradas. É a trava (a):
+       * um template escolhido sai do pool e não pode ser recomprado na mesma
+       * passada — sem isso, o laço comprava a mesma cota repetidamente.
        */
-      const takeFromMissing = (template: ProductTemplate): boolean => {
-        const idx = missingOptimalTemplates.indexOf(template);
+      const availableToday: ProductTemplate[] = [...purchasableTemplates];
+      const takeFromPool = (template: ProductTemplate): boolean => {
+        const idx = availableToday.indexOf(template);
         if (idx === -1) return false;
-        missingOptimalTemplates.splice(idx, 1);
+        availableToday.splice(idx, 1);
         return true;
       };
 
+      /**
+       * PRIMEIRO: as cotas que a carteira consolidada ótima ainda não tem.
+       * Elas têm prioridade porque são elas que mantêm a meta depois de
+       * atingida, com o menor número de produtos ativos (otimização).
+       */
       if (hasMissingOptimalToBuy(plannedCash)) {
         const optimal = missingOptimalTemplates.find((t) => t.investedAmount <= plannedCash);
-        if (optimal && takeFromMissing(optimal)) {
+        if (optimal && takeFromPool(optimal)) {
+          const optIdx = missingOptimalTemplates.indexOf(optimal);
+          if (optIdx !== -1) missingOptimalTemplates.splice(optIdx, 1);
           plannedPurchases.push({ template: optimal, units: 1 });
           plannedCash = Number((plannedCash - optimal.investedAmount).toFixed(2));
           plannedDeficit = Math.max(0, plannedDeficit - tplDailyYield(optimal));
         }
       }
 
+      /**
+       * DEPOIS: fecha o déficit restante comprando o máximo que o caixa
+       * permite, da cota mais eficiente para a menos eficiente. Cada cota
+       * comprada sai do pool, então nenhuma cota idêntica entra duas vezes.
+       */
       let planGuard = 0;
-      while (plannedDeficit > 0.001 && plannedCash >= minCandidatePrice && planGuard < 40) {
+      while (plannedDeficit > 0.001 && plannedCash >= minCandidatePrice && planGuard < 60) {
         planGuard += 1;
 
-        /**
-         * CORREÇÃO: a escolha passa a ser entre as cotas que FALTAM para a
-         * carteira ideal — não entre as maiores do catálogo. Se nenhuma cota
-         * pendente cabe no caixa que sobrou, o plano encerra. Comprar "o que
-         * couber" era exatamente o que materializava produtos fora do plano.
-         */
-        const fitting = missingOptimalTemplates
+        const fitting = availableToday
           .filter((t) => t.investedAmount <= plannedCash && tplDailyYield(t) > 0)
-          .sort((a, b) => b.investedAmount - a.investedAmount);
+          .sort((a, b) =>
+            b.dailyPercentage - a.dailyPercentage ||
+            a.investedAmount - b.investedAmount
+          );
 
         if (fitting.length === 0) break;
 
         const pick = fitting[0];
         if (pick.investedAmount > plannedCash) break;
-        if (!takeFromMissing(pick)) break;
+        if (!takeFromPool(pick)) break;
 
         const yieldPerUnit = Math.max(0.01, tplDailyYield(pick));
         const byDeficit = Math.ceil(plannedDeficit / yieldPerUnit);
         const byCash = Math.floor(plannedCash / pick.investedAmount);
 
+        /**
+         * Compra o máximo possível: o menor entre o que fecha o déficit e o
+         * que o caixa aguenta. `byCash` é teto absoluto — o plano nunca
+         * estoura o saldo livre nem, por consequência, a reserva ou a
+         * blindagem, que já estão fora de `plannedCash`.
+         */
         const units = Math.min(byDeficit, byCash);
         if (units < 1) break;
 
