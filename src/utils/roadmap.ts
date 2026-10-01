@@ -1294,6 +1294,22 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         }
 
         currentFreeCash = Math.max(0, Number((currentFreeCash - previewCost).toFixed(2)));
+        /**
+         * CORREÇÃO (caixa fantasma na projeção):
+         *
+         * O saldo reinvestível dos dias seguintes é DERIVADO de `bankBalance`
+         * (`bankBalance - reservedCashForPending - totalProtectedCashAccumulated`).
+         * Enquanto a prévia debitava apenas `currentFreeCash`, o dinheiro
+         * aplicado continuava dentro do banco na projeção — e o dia seguinte
+         * voltava a oferecer o MESMO valor, financiando compras com dinheiro
+         * que a própria compra sugerida já havia consumido.
+         *
+         * No dia confirmado o débito do banco sempre existiu (ramo abaixo).
+         * Aqui ele passa a existir também na prévia, de forma que a projeção
+         * do dia seguinte enxergue exatamente o caixa que sobrará quando o dia
+         * for concluído. Sem isso, sugestão e execução divergem.
+         */
+        bankBalance = Math.max(0, Number((bankBalance - previewCost).toFixed(2)));
         deficitRemaining = Math.max(0, deficitRemaining - addedDaily);
 
         projectedAcquisitions.push({
