@@ -98,12 +98,26 @@ export function planRoadmapDayCompletion(input: RoadmapDayCompletionInput): Road
     .filter((e) => !e.isPaid)
     .map((e) => ({ id: e.id, title: e.title, amount: e.amount }));
 
+  /**
+   * A lista do dia vem SEMPRE de `acquisitionsToday` — a MESMA lista que a
+   * tela apresenta ao usuário como sugestão.
+   *
+   * CORREÇÃO: antes havia um fallback para `newPurchasesToday` e outro para
+   * `newInvestmentsToday`, e essas listas NÃO contêm o mesmo conjunto.
+   * `newInvestmentsToday`, em particular, é preenchida só com contratos
+   * marcados como investimento novo (ou seja, outra seleção, e às vezes de
+   * outro dia). O resultado era a conclusão executar uma lista diferente da
+   * que foi exibida: o contador de "Aquisições" mostrava 3 (que lê
+   * `acquisitionsToday`) e a carteira ganhava 5 produtos — com compras que o
+   * usuário nunca aprovou, como o NW900E de R$ 100.
+   *
+   * O fallback existe apenas para o caso de a lista do dia vir vazia, e ainda
+   * assim usa `newPurchasesToday`, que o motor deriva do mesmo array.
+   */
   const dayItems =
     details.acquisitionsToday && details.acquisitionsToday.length > 0
       ? details.acquisitionsToday
-      : details.newPurchasesToday && details.newPurchasesToday.length > 0
-        ? details.newPurchasesToday
-        : details.newInvestmentsToday ?? [];
+      : details.newPurchasesToday ?? [];
 
   const fullPlan = buildAcquisitionPlan(date, dayItems);
   const { pending, alreadyApplied } = pendingAcquisitionUnits(fullPlan, products, date);
