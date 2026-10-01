@@ -1469,25 +1469,53 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       /**
        * Plano de compras do dia.
        *
-       * Regra dura: a soma do que for comprado NUNCA passa do caixa livre (o
-       * "Alocável reinvestir" exibido no painel). O plano e montado por
-       * DECOMPOSICAO, antes de qualquer compra — cabe no caixa por construcao.
+       * =====================================================================
+       * CORREÇÃO (motor comprava fora do plano sugerido)
+       * =====================================================================
        *
-       * Preferencia: a MENOR QUANTIDADE de contratos. Pega sempre a MAIOR cota
-       * que ainda caiba, ate o deficit fechar ou o caixa acabar.
+       * O plano era montado em DUAS etapas independentes:
+       *
+       *   1. consumia UMA cota de `missingOptimalTemplates` (a carteira ideal);
+       *   2. um `while` de déficit comprava, em seguida, as MAIORES cotas que
+       *      coubessem no caixa — sem consultar `missingOptimalTemplates` nem
+       *      o que a carteira já possui.
+       *
+       * A etapa 2 recomprava cotas que o próprio dia já havia comprado: o
+       * `NW354` de R$ 25 nascia de novo em outra data, o `NW900E` de R$ 100
+       * entrava sem nunca ter aparecido na sugestão exibida, e a contagem de
+       * produtos ativos subia mais do que o número de "Aquisições" mostrava.
+       *
+       * Agora existe UMA fonte para o dia: `missingOptimalTemplates`. Tanto a
+       * primeira escolha quanto o preenchimento de déficit retiram dela, e a
+       * cota só é comprada enquanto ainda estiver na lista — ou seja, enquanto
+       * ela de fato faltar para a carteira naquele dia.
+       *
+       * Regra dura mantida: a soma do plano NUNCA passa do caixa livre (o
+       * "Alocável reinvestir" do painel). O plano é montado por DECOMPOSIÇÃO,
+       * antes de qualquer compra, então cabe no caixa por construção.
        */
       const plannedPurchases: { template: ProductTemplate; units: number }[] = [];
       let plannedCash = Number(currentFreeCash.toFixed(2));
       let plannedDeficit = deficitRemaining;
 
+      /**
+       * Retira a cota da lista de pendências assim que ela entra no plano.
+       * Devolver `false` significa "não falta mais" — e o laço encerra em vez
+       * de recomprar a mesma cota.
+       */
+      const takeFromMissing = (template: ProductTemplate): boolean => {
+        const idx = missingOptimalTemplates.indexOf(template);
+        if (idx === -1) return false;
+        missingOptimalTemplates.splice(idx, 1);
+        return true;
+      };
+
       if (hasMissingOptimalToBuy(plannedCash)) {
         const optimal = missingOptimalTemplates.find((t) => t.investedAmount <= plannedCash);
-        if (optimal) {
+        if (optimal && takeFromMissing(optimal)) {
           plannedPurchases.push({ template: optimal, units: 1 });
           plannedCash = Number((plannedCash - optimal.investedAmount).toFixed(2));
           plannedDeficit = Math.max(0, plannedDeficit - tplDailyYield(optimal));
-          const optIdx = missingOptimalTemplates.indexOf(optimal);
-          if (optIdx !== -1) missingOptimalTemplates.splice(optIdx, 1);
         }
       }
 
@@ -1495,34 +1523,26 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       while (plannedDeficit > 0.001 && plannedCash >= minCandidatePrice && planGuard < 40) {
         planGuard += 1;
 
-        const fitting = purchasableTemplates
+        /**
+         * CORREÇÃO: a escolha passa a ser entre as cotas que FALTAM para a
+         * carteira ideal — não entre as maiores do catálogo. Se nenhuma cota
+         * pendente cabe no caixa que sobrou, o plano encerra. Comprar "o que
+         * couber" era exatamente o que materializava produtos fora do plano.
+         */
+        const fitting = missingOptimalTemplates
           .filter((t) => t.investedAmount <= plannedCash && tplDailyYield(t) > 0)
           .sort((a, b) => b.investedAmount - a.investedAmount);
 
         if (fitting.length === 0) break;
 
         const pick = fitting[0];
-
-        /**
-         * CORREÇÃO (plano estourava o caixa): o laço entrava exigindo apenas
-         * `plannedCash >= minCandidatePrice` — o preço da MENOR cota do
-         * catálogo, não o da cota escolhida. Se a escolhida custa mais do que
-         * o saldo, não há compra possível nesta passada.
-         */
         if (pick.investedAmount > plannedCash) break;
+        if (!takeFromMissing(pick)) break;
 
         const yieldPerUnit = Math.max(0.01, tplDailyYield(pick));
         const byDeficit = Math.ceil(plannedDeficit / yieldPerUnit);
         const byCash = Math.floor(plannedCash / pick.investedAmount);
 
-        /**
-         * CORREÇÃO (plano estourava o caixa): era `Math.max(1, ...)`, que
-         * FORÇAVA a compra de ao menos uma cota mesmo sem saldo para ela — e
-         * `byDeficit` usa `Math.ceil`, então um déficit de R$ 60 com cota de
-         * R$ 50/dia pedia 2 cotas (R$ 500) ainda que o caixa só cobrisse uma.
-         * O caixa (`byCash`) agora é teto absoluto: sem cota inteira que caiba,
-         * o plano encerra em vez de estourar o saldo.
-         */
         const units = Math.min(byDeficit, byCash);
         if (units < 1) break;
 
@@ -1532,12 +1552,8 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       }
 
       /**
-       * CORREÇÃO (prévia divergente da execução): o plano do dia é IDÊNTICO
-       * esteja o dia confirmado ou não. Truncar a prévia para uma única cota
-       * fazia o card sugerir 1 compra enquanto "Marcar Concluído" — que
-       * recalcula com `roadmapActionRealized = true` e portanto não passa mais
-       * por este truncamento — executava o plano inteiro. Se o caixa comporta
-       * N cotas, a sugestão mostra as N que serão efetivadas.
+       * O plano do dia é IDÊNTICO esteja o dia confirmado ou não: o que a
+       * sugestão mostra é exatamente o que "Marcar Concluído" executa.
        */
       for (const item of plannedPurchases) {
         const accepted = buy(
@@ -1550,10 +1566,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           item.template.id
         );
 
-        // CORRECAO (previa estourava o orcamento): `buy` devolve `false`
-        // quando a cota nao cabe no caixa restante da previa. O plano foi
-        // montado contra o orcamento cheio do dia, entao o primeiro item que
-        // nao cabe encerra a lista — nao ha nada menor depois dele.
         if (accepted === false) break;
       }
     }
