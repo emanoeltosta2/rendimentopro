@@ -332,33 +332,6 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                         ? 'Nenhuma cota será comprada neste dia. O dinheiro continua no caixa e chega somado ao dia seguinte, onde a alocação é recalculada.'
                         : 'Adie para não comprar hoje — útil quando você prefere manter o mesmo horário de compra todos os dias. As despesas deste dia continuam sendo pagas normalmente.'}
                     </p>
-
-                    {/* O que ficou adiado neste dia */}
-                    {isAcquisitionDeferred && todayAcquisitions.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {todayAcquisitions.map((acq, idx) => (
-                          <div
-                            key={`${acq.id}-defer-${idx}`}
-                            className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-amber-950/30 border border-amber-900/50 text-[11px]"
-                          >
-                            <span className="text-amber-200 truncate">
-                              {acq.name}
-                              {acq.units > 1 ? (
-                                <span className="text-amber-300/80"> · {acq.units}x cotas</span>
-                              ) : null}
-                            </span>
-                            <span className="font-bold text-amber-300 shrink-0">
-                              {formatCurrency(acq.investedAmount)}
-                              <span className="font-normal text-amber-400/80"> adiado</span>
-                            </span>
-                          </div>
-                        ))}
-                        <p className="text-[10px] text-slate-400 pt-0.5">
-                          Estas cotas <strong className="text-slate-300">não foram compradas</strong> — o valor segue no caixa
-                          e entra na próxima data com compras.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -795,12 +768,16 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                 </div>
 
                 <div className="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-xs font-medium text-slate-400 block">Alocável reinvestir</span>
+                  <span className="text-xs font-medium text-slate-400 block">Alocável p/ investir</span>
                   <span className="font-extrabold text-slate-100 text-sm block mt-0.5">
                     {formatCurrency(details.reservedForReinvestment ?? (details.bankBalance ?? details.cashBalance))}
                   </span>
-                  <span className="text-[11px] text-slate-400 block">Saldo livre no banco</span>
+                  <span className="text-[11px] text-slate-400 block">Após blindagem + {formatCurrency(details.reservedForExpenses ?? 0)} p/ despesas</span>
                 </div>
+              </div>
+
+              <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-950/50 border border-slate-800 text-[11px] text-slate-400">
+                Fechamento do caixa: <strong className="text-slate-200">{formatCurrency(details.bankBalance ?? details.cashBalance)}</strong> no banco = <strong className="text-emerald-400">{formatCurrency(details.totalProtectedAccumulated ?? 0)}</strong> blindado + <strong className="text-amber-300">{formatCurrency(details.reservedForExpenses ?? 0)}</strong> reservado para despesas + <strong className="text-slate-200">{formatCurrency(details.reservedForReinvestment ?? 0)}</strong> disponível para investir.
               </div>
 
               {/* Protection tip / algorithm rationale */}
@@ -906,20 +883,8 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-slate-100 text-xs sm:text-sm">{acq.name}</span>
-                            <span
-                              className={
-                                isAcquisitionDeferred
-                                  ? 'text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded'
-                                  : isDayCompleted
-                                  ? 'text-[11px] font-semibold bg-emerald-950/70 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded'
-                                  : 'text-[11px] font-semibold bg-amber-950/60 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded'
-                              }
-                            >
-                              {isAcquisitionDeferred
-                                ? `Adiada · Dia ${details.day}`
-                                : isDayCompleted
-                                ? `Comprado · Dia ${details.day}`
-                                : `A comprar · Dia ${details.day}`}
+                            <span className="text-[11px] font-semibold bg-emerald-950/70 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded">
+                              Hoje (Dia {details.day})
                             </span>
                             {acq.units > 1 && (
                               <span className="text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded">
@@ -935,24 +900,8 @@ export const RoadmapDayDetailsModal: React.FC<RoadmapDayDetailsModalProps> = ({
 
                       <div className="flex items-center gap-4 sm:text-right shrink-0 bg-slate-950/70 px-3 py-2 rounded-lg border border-slate-800">
                         <div>
-                          <span className="text-[11px] text-slate-400 block font-medium">
-                            {isAcquisitionDeferred
-                              ? 'Adiado'
-                              : isDayCompleted
-                              ? 'Investido'
-                              : 'Previsto'}
-                          </span>
-                          <span
-                            className={
-                              isAcquisitionDeferred
-                                ? 'font-bold text-slate-400 text-xs line-through'
-                                : isDayCompleted
-                                ? 'font-bold text-slate-100 text-xs'
-                                : 'font-bold text-amber-300 text-xs'
-                            }
-                          >
-                            {formatCurrency(acq.investedAmount)}
-                          </span>
+                          <span className="text-[11px] text-slate-400 block font-medium">Investido hoje</span>
+                          <span className="font-bold text-slate-100 text-xs">{formatCurrency(acq.investedAmount)}</span>
                         </div>
                         <div className="border-l border-slate-800 pl-3">
                           <span className="text-[11px] text-slate-400 block font-medium">Renda adicional</span>

@@ -5,7 +5,9 @@ import {
   Trash2, 
   Edit3, 
   Rocket, 
-  BookmarkPlus
+  BookmarkPlus,
+  Download,
+  Upload
 } from 'lucide-react';
 import { ProductTemplate, PlatformSettings, InvestmentProduct } from '../types/investment';
 import { 
@@ -15,6 +17,8 @@ import {
   formatPercentBR,
 } from '../utils/calculations';
 import { createId } from '../utils/id';
+import { TemplateExportModal } from './TemplateExportModal';
+import { TemplateImportModal } from './TemplateImportModal';
 
 interface TemplateManagementModalProps {
   isOpen: boolean;
@@ -24,6 +28,7 @@ interface TemplateManagementModalProps {
   onSaveTemplate: (template: ProductTemplate) => void;
   onDeleteTemplate: (templateId: string) => void;
   onQuickLaunchTemplate: (template: ProductTemplate) => void;
+  onImportTemplates?: (templates: ProductTemplate[], mode: 'merge' | 'replace') => void;
 }
 
 export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = ({
@@ -34,10 +39,13 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
   onSaveTemplate,
   onDeleteTemplate,
   onQuickLaunchTemplate,
+  onImportTemplates,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Form states for creating/editing a template
   const [name, setName] = useState('');
@@ -137,17 +145,42 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
         <div className="flex-1 overflow-y-auto pr-1 space-y-4">
           {!isEditing ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 tracking-normal">
                   Modelos Salvos ({templates.length})
                 </span>
-                <button
-                  onClick={handleOpenNewForm}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Cadastrar novo modelo</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsExportModalOpen(true)}
+                    className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Exportar catálogo de produtos para JSON ou CSV"
+                  >
+                    <Download className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
+                    <span>Exportar</span>
+                  </button>
+
+                  {onImportTemplates && (
+                    <button
+                      type="button"
+                      onClick={() => setIsImportModalOpen(true)}
+                      className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Importar catálogo de produtos via JSON ou CSV"
+                    >
+                      <Upload className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
+                      <span>Importar</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleOpenNewForm}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Cadastrar novo modelo</span>
+                  </button>
+                </div>
               </div>
 
               {templates.length === 0 ? (
@@ -515,12 +548,29 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
           <span>Você também pode salvar novos modelos direto da tela de cadastro de produto.</span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg transition-colors"
+            className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg transition-colors cursor-pointer"
           >
             Fechar
           </button>
         </div>
       </div>
+
+      {/* Modal de Exportação do Catálogo */}
+      <TemplateExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        templates={templates}
+      />
+
+      {/* Modal de Importação do Catálogo */}
+      {onImportTemplates && (
+        <TemplateImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onImport={onImportTemplates}
+          existingTemplatesCount={templates.length}
+        />
+      )}
     </div>
   );
 };

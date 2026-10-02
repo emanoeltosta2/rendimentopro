@@ -30,6 +30,8 @@ import { DEFAULT_PRODUCT_TEMPLATES } from './storage';
 interface InternalContract {
   id: string;
   name: string;
+  /** Nome do modelo/produto sem o rótulo ("Reinvestimento (...)") da simulação. */
+  baseName?: string;
   unitPrice: number;
   units: number;
   investedAmount: number; // unitPrice * units
@@ -42,13 +44,11 @@ interface InternalContract {
   isNewInvestment: boolean;
   isInitialPortfolio?: boolean;
   /**
-   * Compra de hoje ainda não confirmada pelo usuário (prévia).
-   * Existe em `contracts` só para que os dias SEGUINTES (day > startDay)
-   * projetem renda com ela; no próprio dia de início ela não deve contar
-   * como "ativa" nem ser tratada como aquisição já efetivada, pois o caixa
-   * ainda não foi debitado de verdade (só "Marcar Concluído" faz isso).
+   * Contrato real criado ao concluir um dia do Roadmap (produto com
+   * `roadmapAcquisitionDate`). O dinheiro dele já saiu do caixa naquele dia,
+   * então a simulação precisa debitá-lo em vez de comprar a mesma coisa de novo.
    */
-  isUnconfirmedPreview?: boolean;
+  isRoadmapMaterialized?: boolean;
 }
 
 /** Registro escalar por dia. Os detalhes pesados são reconstruídos sob demanda. */
@@ -106,30 +106,6 @@ const EMPTY_TEMPLATES: ProductTemplate[] = [];
 const MAX_MILESTONES = 150;
 /** Dias que uma despesa pode aguardar caixa antes de ser declarada inviável. */
 const MAX_EXPENSE_WAIT_DAYS = 45;
-
-/**
- * Remove o rotulo de origem do nome de um produto do Roadmap.
- *
- * O motor grava a compra do dia com prefixo (`Reinvestimento (NW765H)`,
- * `Novo investimento (X)`, `Otimizacao da carteira (X)`), enquanto a
- * pre-visualizacao grava o nome cru (`NW765H`). Sao a MESMA cota: para
- * qualquer comparacao entre produtos — dedupe, agrupamento, conciliacao —
- * os dois precisam colapsar na mesma chave.
- *
- * @example
- *   normalizeProductName('Reinvestimento (NW765H)') // 'nw765h'
- *   normalizeProductName('  NW765H  ')              // 'nw765h'
- */
-export function normalizeProductName(name: string | undefined | null): string {
-  return (name ?? '')
-    .toLowerCase()
-    .replace(/^novo investimento\s*\(/i, '')
-    .replace(/^reinvestimento\s*\(/i, '')
-    .replace(/^manutenção da meta\s*\(/i, '')
-    .replace(/^otimização da carteira\s*\(/i, '')
-    .replace(/\)$/i, '')
-    .trim();
-}
 
 /**
  * Encontra a combinação ótima de templates para atingir e manter a meta diária
@@ -321,15 +297,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
 
   const todayOffset = diffInDays(baseStartDate, today);
 
-  /**
-   * Normaliza o nome de um produto/cota para comparacao.
-   *
-   * EXPORTADO como funcao de modulo para que o App use EXATAMENTE a mesma
-   * regra ao deduplicar. Antes o App reimplementava uma versao mais fraca
-   * (apenas trim + lowercase), o que fazia `NW765H` e
-   * `Reinvestimento (NW765H)` — a MESMA cota — serem tratados como dois
-   * produtos distintos e materializados em dobro ao concluir o dia.
-   */
   const getProductNormalizedKey = (name: string): string =>
     name
       .toLowerCase()
@@ -375,6 +342,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     contracts.push({
       id: p.id,
       name: p.name,
+      baseName: p.name,
       unitPrice: p.investedAmount,
       units: 1,
       investedAmount: p.investedAmount,
@@ -386,6 +354,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       isReinvestment: isExplicitReinvestment,
       isNewInvestment,
       isInitialPortfolio: startOffset <= 0,
+      isRoadmapMaterialized: startOffset > 0 && Boolean(p.roadmapAcquisitionDate),
     });
   });
 
@@ -415,7 +384,13 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   let estimatedGoalDate: string | null = null;
   let contractSeq = 0;
 
-  const initialPortfolioCapital = contracts.reduce((sum, c) => sum + c.investedAmount, 0);
+  // Capital da carteira inicial. Produtos criados pelo próprio Roadmap ao concluir
+  // um dia são REINVESTIMENTOS, não capital inicial: se entrassem nesta soma,
+  // concluir um dia (principalmente futuro) mudaria retroativamente a blindagem
+  // e o "risco zero" de dias anteriores, alterando a projeção sozinha.
+  const initialPortfolioCapital = contracts
+    .filter((c) => !c.isRoadmapMaterialized)
+    .reduce((sum, c) => sum + c.investedAmount, 0);
   let totalProtectedCashAccumulated = 0;
   const dynamicBufferPercentages: number[] = [];
   const triggeredProtectionMilestones = new Set<string>();
@@ -589,6 +564,10 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   const baseTemplateList = templates.length > 0 ? templates : DEFAULT_PRODUCT_TEMPLATES;
   const candidateTemplates: ProductTemplate[] = [...baseTemplateList];
   activeProducts.forEach((p) => {
+    // Produtos criados ao concluir um dia do Roadmap já vêm do catálogo. Se um
+    // deles tiver valor fora do catálogo (ex.: produto legado com várias cotas
+    // somadas), ele não pode virar um "modelo de compra" falso.
+    if (p.roadmapAcquisitionDate) return;
     if (!candidateTemplates.some((t) => t.investedAmount === p.investedAmount)) {
       candidateTemplates.push({
         id: `derived_${p.id}`,
@@ -635,7 +614,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   let optimizationCompletedMilestoneAdded = false;
 
   // CORREÇÃO (C1): o laço não vai além do horizonte que será exibido.
-  const maxSimulationDays = horizonDays !== undefined ? Math.max(horizonDays, 1) : 365;
+  const maxSimulationDays = horizonDays !== undefined ? Math.max(horizonDays, 0) : 365;
   const autoHorizonCap = 90;
 
   // =====================================================================
@@ -698,28 +677,12 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     let activeInvestedAmount = 0;
 
     for (const c of contracts) {
-      // CORREÇÃO (leak de prévia não confirmada): antes, esta checagem não
-      // existia e um contrato criado como prévia de "hoje" (isUnconfirmedPreview,
-      // cujo caixa nunca foi debitado) passava a contar como capital ativo e a
-      // gerar rendimento de verdade a partir do dia seguinte — permanentemente,
-      // mesmo sem o usuário jamais ter confirmado a ação. Isso inflava
-      // "Capital em custódia", "produtos ativos" e o saldo em banco (via
-      // platformBalance) com dinheiro que nunca saiu do banco, e destoava da
-      // lista "Carteira Ativa" (calculada à parte, sem este bug). Enquanto o
-      // dia não é confirmado, a prévia não tem nenhum efeito financeiro além
-      // de aparecer na aba "Aquisições" do seu próprio dia.
-      // CORREÇÃO (renda da compra sugerida de hoje):
-      // Uma prévia não confirmada não pode ter NENHUM efeito no seu PRÓPRIO dia
-      // (o caixa ainda não foi debitado), mas a partir do dia seguinte ela já
-      // representa capital aplicado — a regra de 24h do produto. Antes, o
-      // `continue` incondicional a descartava em todos os dias, então a compra
-      // sugerida para hoje só aparecia na renda 2 dias depois (D+2), e não D+1.
-      if (c.isUnconfirmedPreview && day <= c.startDay) continue;
       if (day > c.startDay && day <= c.endDay) {
         dailyGross += c.investedAmount * (c.dailyPercentage / 100);
       }
       if (day >= c.startDay && day < c.endDay) {
-        activeCount += 1;
+        // Um contrato simulado agrega N cotas; cada cota é um produto ativo.
+        activeCount += Math.max(1, c.units);
         activeInvestedAmount += c.investedAmount;
       }
       if (day === c.endDay && c.returnCapitalAtEnd) {
@@ -1077,6 +1040,19 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       );
     }
 
+    // CORREÇÃO (duplicação de aquisições ao concluir o dia): quando o usuário
+    // conclui um dia, o App cria produtos reais com início nesta data. Esse
+    // dinheiro JÁ foi gasto, mas o saldo simulado ainda o enxergava como livre
+    // e o motor comprava a mesma coisa de novo ("Reinvestimento (...)").
+    // Debitamos aqui as compras reais deste dia, exatamente como buy() faria,
+    // para que o caixa livre e o déficit reflitam o que de fato foi executado.
+    const materializedSpendToday = contracts
+      .filter((c) => c.startDay === day && c.isRoadmapMaterialized && !c.isInitialPortfolio)
+      .reduce((sum, c) => sum + c.investedAmount, 0);
+    if (materializedSpendToday > 0) {
+      bankBalance = Math.max(0, Number((bankBalance - materializedSpendToday).toFixed(2)));
+    }
+
     // O valor correto para reinvestimento é sempre o saldo líquido livre em banco
     const rawBankFreeCash = Math.max(
       0,
@@ -1260,60 +1236,15 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       // Prévia do dia atual: registra a ação planejada, mas não altera o estado
       // financeiro. A confirmação do usuário recalcula o roadmap e materializa
       // o produto de verdade no App.
-      /**
-       * Dia ainda nao confirmado (tipicamente HOJE).
-       *
-       * OPCAO A: a compra planejada entra na SIMULACAO como contrato, para que
-       * os dias seguintes projetem a renda com ela. Sem isso, o dia de hoje
-       * ficava invisivel para a projecao e o dia seguinte mostrava a renda
-       * antiga, defasando todo o planejamento.
-       *
-       * O caixa NAO e debitado aqui e o contrato nao vai para o App: quem
-       * materializa de verdade e o botao "Marcar Concluido".
-       */
       if (!roadmapActionRealized) {
-        /**
-         * CORRECAO (previa estourava o orcamento do dia):
-         *
-         * Este ramo saía com `return` ANTES de debitar qualquer orçamento — e,
-         * como a lista de compras é montada por DECOMPOSIÇÃO, cada item do
-         * plano entrava aqui como se o dia tivesse caixa infinito. O sintoma
-         * não era teórico: o `while` que monta o plano aprova as N cotas que
-         * cabem no caixa CHEIO, e todas eram empilhadas na prévia dia após
-         * dia, porque nada consumia o orçamento. Também deixava `deficitRemaining`
-         * intacto, então o déficit "pago" continuava sendo planejado de novo.
-         *
-         * Agora a prévia consome o MESMO orçamento que a confirmação: se a
-         * cota não cabe no caixa livre restante, a prévia não entra — e o
-         * laço do plano encerra por caixa, como aconteceria ao confirmar.
-         */
-        const previewCost = Number((unitPrice * units).toFixed(2));
-
-        if (previewCost > currentFreeCash + 0.001) {
-          return false;
-        }
-
-        currentFreeCash = Math.max(0, Number((currentFreeCash - previewCost).toFixed(2)));
-        /**
-         * CORREÇÃO (caixa fantasma na projeção):
-         *
-         * O saldo reinvestível dos dias seguintes é DERIVADO de `bankBalance`
-         * (`bankBalance - reservedCashForPending - totalProtectedCashAccumulated`).
-         * Enquanto a prévia debitava apenas `currentFreeCash`, o dinheiro
-         * aplicado continuava dentro do banco na projeção — e o dia seguinte
-         * voltava a oferecer o MESMO valor, financiando compras com dinheiro
-         * que a própria compra sugerida já havia consumido.
-         *
-         * No dia confirmado o débito do banco sempre existiu (ramo abaixo).
-         * Aqui ele passa a existir também na prévia, de forma que a projeção
-         * do dia seguinte enxergue exatamente o caixa que sobrará quando o dia
-         * for concluído. Sem isso, sugestão e execução divergem.
-         */
-        bankBalance = Math.max(0, Number((bankBalance - previewCost).toFixed(2)));
-        deficitRemaining = Math.max(0, deficitRemaining - addedDaily);
+        // Uma prévia nunca pode gerar uma recomendação acima do caixa livre
+        // disponível. O cálculo de `units` já aplica este limite, mas mantemos
+        // a guarda aqui para impedir regressões quando novos caminhos de compra
+        // forem adicionados.
+        if (spent > currentFreeCash + 0.005) return;
 
         projectedAcquisitions.push({
-          id: `planned_d${day}_${templateId}`,
+          id: `planned_d${day}_${templateId}_${projectedAcquisitions.length}`,
           name,
           day,
           date: dateOnDay,
@@ -1327,31 +1258,20 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           returnCapitalAtEnd,
         });
 
-        contracts.push({
-          id: `planned_d${day}_${templateId}_${contractSeq++}`,
-          name,
-          unitPrice,
-          units,
-          investedAmount: spent,
-          dailyPercentage,
-          durationDays,
-          startDay: day,
-          endDay: day + durationDays,
-          returnCapitalAtEnd,
-          isReinvestment: true,
-          isNewInvestment: false,
-          isInitialPortfolio: false,
-          isUnconfirmedPreview: true,
-        });
-
-        return true;
+        // Mesmo sendo apenas uma prévia, a aquisição precisa consumir o CAIXA
+        // DE PLANEJAMENTO da iteração. Antes desta atualização o `buy()` saía
+        // daqui sem reduzir `currentFreeCash` nem `deficitRemaining`. Assim,
+        // no dia atual, o laço registrava a compra principal e logo depois o
+        // fallback de `reinvestmentUnit` enxergava o mesmo déficit original e
+        // comprava novamente. Ex.: 1x R$100 + 4x R$25 = R$200 sugeridos para
+        // apenas R$100 de caixa alocável.
+        currentFreeCash = Number(Math.max(0, currentFreeCash - spent).toFixed(2));
+        deficitRemaining = Number(Math.max(0, deficitRemaining - addedDaily).toFixed(2));
+        return;
       }
 
-      // Debita o caixa livre a cada compra. Sem isso, o laço reaproveitava o
-      // mesmo caixa em várias passadas e comprava mais do que havia disponível
-      // (ex.: R$ 200 gastos com R$ 108 livres).
-      currentFreeCash = Math.max(0, Number((currentFreeCash - spent).toFixed(2)));
-      bankBalance = Math.max(0, Number((bankBalance - spent).toFixed(2)));
+      currentFreeCash -= spent;
+      bankBalance = Math.max(0, bankBalance - spent);
       deficitRemaining = Math.max(0, deficitRemaining - addedDaily);
 
       const normKey = getProductNormalizedKey(name);
@@ -1393,6 +1313,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       contracts.push({
         id: `${isNewInv ? 'newinv' : 'reinv'}_d${day}_${templateId}_${contractSeq++}`,
         name: label,
+        baseName: name,
         unitPrice,
         units,
         investedAmount: spent,
@@ -1406,8 +1327,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         isInitialPortfolio: false,
       });
 
-      // CORRECAO (marco duplicado): uma compra agregada de N cotas gerava N
-      // marcos identicos (o mesmo titulo repetido N vezes no mesmo dia).
       if (rawMilestones.length < MAX_MILESTONES) {
         rawMilestones.push({
           date: dateOnDay,
@@ -1423,17 +1342,10 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       }
     };
 
-    /**
-     * CORREÇÃO (plano estourava o caixa): esta checagem testava sempre contra
-     * `currentFreeCash` (o saldo CHEIO do dia). Dentro da montagem do plano o
-     * saldo já foi parcialmente comprometido por compras anteriores, então a
-     * cota "ótima" era autorizada com dinheiro que não existia mais. Agora o
-     * saldo a considerar é sempre explícito.
-     */
-    const hasMissingOptimalToBuy = (availableCash: number = currentFreeCash) =>
+    const hasMissingOptimalToBuy = () =>
       isGoalMaintenance &&
       activeCount > minPossibleContracts &&
-      missingOptimalTemplates.some((t) => t.investedAmount <= availableCash);
+      missingOptimalTemplates.some((t) => t.investedAmount <= currentFreeCash);
 
     // Ações de aporte/reinvestimento em dias já vencidos só entram na carteira
     // quando aquele dia foi efetivamente concluído. No dia de hoje, porém,
@@ -1462,139 +1374,136 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       }
     }
 
-    // CORRECAO (previa estourava o orcamento): a previa de hoje respeita o
-    // caixa livre do dia, exatamente como a confirmacao. Antes, o ramo de
-    // previa dentro de `buy()` empilhava contratos sem debitar orcamento.
     if (!isAcquisitionDeferred && (roadmapActionRealized || previewTodayAction) && currentFreeCash >= minCandidatePrice && (deficitRemaining > 0 || hasMissingOptimalToBuy())) {
-      /**
-       * =====================================================================
-       * Plano de compras do dia — composição inteligente com travas de segurança
-       * =====================================================================
-       *
-       * OBJETIVO: fechar o déficit de renda do dia seguinte (a meta diária
-       * menos o que a carteira renderá amanhã) usando o caixa disponível.
-       *
-       * TRÊS TRAVAS SIMULTÂNEAS, e nenhuma delas pode ser satisfeita sozinha:
-       *
-       *   a) IDENTIDADE — cada cota entra no plano UMA vez. O plano é montado
-       *      sobre um "orçamento" próprio e cada template escolhido é retirado
-       *      do pool do dia. É isso que impede o NW354 de R$ 25 de ser comprado
-       *      duas vezes no mesmo dia, sem restringir quais cotas podem ser
-       *      compradas.
-       *
-       *   b) CAIXA LIVRE — a soma do plano nunca passa de `currentFreeCash`,
-       *      que já é o saldo em banco MENOS a reserva para contas com
-       *      vencimento próximo MENOS a blindagem acumulada:
-       *
-       *        currentFreeCash = bankBalance - reservedCashForPending - totalProtectedCashAccumulated
-       *
-       *      Ou seja: o fundo de segurança (blindagem) e o caixa das despesas
-       *      agendadas nunca são usados para comprar. A blindagem é intocável
-       *      por construção, não por uma checagem adicional.
-       *
-       *   c) BLINDAGEM DINÂMICA — o buffer do dia (`effectiveDynamicBufferPct`)
-       *      é uma retenção sobre o FLUXO que entra no banco (Passo 4c), e não
-       *      sobre o caixa já livre. Ele já foi descontado antes de o saldo
-       *      chegar aqui, então comprar dentro de `currentFreeCash` respeita a
-       *      blindagem do dia. O que a trava faz é impedir que uma compra
-       *      consuma o que a blindagem reteve: como a retenção sai do fluxo e
-       *      não do caixa livre, o plano não pode "furar" o cofre para comprar.
-       *
-       * ESTRATÉGIA (escolhida pelo usuário): comprar o MÁXIMO que o caixa
-       * permite no dia, fechando o déficit o quanto antes, sem nunca cruzar
-       * as travas acima. A escolha é pela cota mais eficiente em % ao dia e,
-       * em empate, pela MENOR cota — imobilizar o mínimo por real de renda
-       * gerada.
-       */
-      const plannedPurchases: { template: ProductTemplate; units: number }[] = [];
-      let plannedCash = Number(currentFreeCash.toFixed(2));
-      let plannedDeficit = deficitRemaining;
+      for (let pass = 0; pass < 40; pass++) {
+        const canConsolidateNow = hasMissingOptimalToBuy();
+        if (deficitRemaining <= 0.001 && !canConsolidateNow) break;
 
-      /**
-       * Guarda as cotas do dia que ainda podem ser compradas. É a trava (a):
-       * um template escolhido sai do pool e não pode ser recomprado na mesma
-       * passada — sem isso, o laço comprava a mesma cota repetidamente.
-       */
-      const availableToday: ProductTemplate[] = [...purchasableTemplates];
-      const takeFromPool = (template: ProductTemplate): boolean => {
-        const idx = availableToday.indexOf(template);
-        if (idx === -1) return false;
-        availableToday.splice(idx, 1);
-        return true;
-      };
+        const affordable = purchasableTemplates.filter((t) => t.investedAmount <= currentFreeCash);
+        if (affordable.length === 0) break;
 
-      /**
-       * PRIMEIRO: as cotas que a carteira consolidada ótima ainda não tem.
-       * Elas têm prioridade porque são elas que mantêm a meta depois de
-       * atingida, com o menor número de produtos ativos (otimização).
-       */
-      if (hasMissingOptimalToBuy(plannedCash)) {
-        const optimal = missingOptimalTemplates.find((t) => t.investedAmount <= plannedCash);
-        if (optimal && takeFromPool(optimal)) {
-          const optIdx = missingOptimalTemplates.indexOf(optimal);
-          if (optIdx !== -1) missingOptimalTemplates.splice(optIdx, 1);
-          plannedPurchases.push({ template: optimal, units: 1 });
-          plannedCash = Number((plannedCash - optimal.investedAmount).toFixed(2));
-          plannedDeficit = Math.max(0, plannedDeficit - tplDailyYield(optimal));
-        }
-      }
+        let chosen: ProductTemplate;
+        let unitsToBuy = 1;
 
-      /**
-       * DEPOIS: fecha o déficit restante comprando o máximo que o caixa
-       * permite, da cota mais eficiente para a menos eficiente. Cada cota
-       * comprada sai do pool, então nenhuma cota idêntica entra duas vezes.
-       */
-      let planGuard = 0;
-      while (plannedDeficit > 0.001 && plannedCash >= minCandidatePrice && planGuard < 60) {
-        planGuard += 1;
-
-        const fitting = availableToday
-          .filter((t) => t.investedAmount <= plannedCash && tplDailyYield(t) > 0)
-          .sort((a, b) =>
-            b.dailyPercentage - a.dailyPercentage ||
-            a.investedAmount - b.investedAmount
+        if (isGoalMaintenance) {
+          // 1. Se estamos em consolidação e temos cotas ótimas pendentes que cabem no caixa:
+          const affordableMissing = missingOptimalTemplates.filter(
+            (t) => t.investedAmount <= currentFreeCash
           );
 
-        if (fitting.length === 0) break;
+          if (affordableMissing.length > 0) {
+            chosen = affordableMissing[0];
+            const optIdx = missingOptimalTemplates.indexOf(chosen);
+            if (optIdx !== -1) missingOptimalTemplates.splice(optIdx, 1);
+            unitsToBuy = 1;
+          } else {
+            // Se não há cotas ótimas ausentes acessíveis, só compra se houver déficit real de renda diária
+            if (deficitRemaining <= 0.001) break;
 
-        const pick = fitting[0];
-        if (pick.investedAmount > plannedCash) break;
-        if (!takeFromPool(pick)) break;
+            const validCandidates = affordable.filter(
+              (t) => tplDailyYield(t) <= targetDailyYield * 1.05
+            );
+            const pool = validCandidates.length > 0 ? validCandidates : affordable;
 
-        const yieldPerUnit = Math.max(0.01, tplDailyYield(pick));
-        const byDeficit = Math.ceil(plannedDeficit / yieldPerUnit);
-        const byCash = Math.floor(plannedCash / pick.investedAmount);
+            const sorted = [...pool].sort((a, b) => {
+              const yieldA = tplDailyYield(a);
+              const yieldB = tplDailyYield(b);
 
-        /**
-         * Compra o máximo possível: o menor entre o que fecha o déficit e o
-         * que o caixa aguenta. `byCash` é teto absoluto — o plano nunca
-         * estoura o saldo livre nem, por consequência, a reserva ou a
-         * blindagem, que já estão fora de `plannedCash`.
-         */
-        const units = Math.min(byDeficit, byCash);
-        if (units < 1) break;
+              const overshootA = Math.max(0, yieldA - deficitRemaining);
+              const overshootB = Math.max(0, yieldB - deficitRemaining);
 
-        plannedPurchases.push({ template: pick, units });
-        plannedCash = Number((plannedCash - pick.investedAmount * units).toFixed(2));
-        plannedDeficit = Math.max(0, plannedDeficit - yieldPerUnit * units);
+              const excessiveA = overshootA > Math.max(10, deficitRemaining * 0.25);
+              const excessiveB = overshootB > Math.max(10, deficitRemaining * 0.25);
+
+              if (excessiveA !== excessiveB) {
+                return excessiveA ? 1 : -1;
+              }
+
+              if (Math.abs(yieldB - yieldA) > 0.01) {
+                return yieldB - yieldA;
+              }
+
+              return b.dailyPercentage - a.dailyPercentage || a.investedAmount - b.investedAmount;
+            });
+
+            chosen = sorted[0];
+            const yieldPerUnit = Math.max(0.01, tplDailyYield(chosen));
+            unitsToBuy = Math.min(
+              Math.ceil(deficitRemaining / yieldPerUnit),
+              Math.floor(currentFreeCash / chosen.investedAmount)
+            );
+          }
+        } else {
+          // Fase de ramp-up até a meta
+          const covering = affordable
+            .filter((t) => tplDailyYield(t) >= deficitRemaining)
+            .sort((a, b) => a.investedAmount - b.investedAmount);
+
+          if (covering.length > 0) {
+            // Uma única cota já cobre o déficit: a menor que o faz.
+            chosen = covering[0];
+            unitsToBuy = 1;
+          } else {
+            // CORREÇÃO: nenhuma cota cobre o déficit sozinha. Antes o código
+            // caía em `affordable[0]` (a MENOR cota do catálogo) e comprava N
+            // unidades dela (ex.: 26x R$25), inflando a quantidade de produtos
+            // ativos. Agora usamos a MAIOR cota que cabe no caixa (todas as
+            // candidatas aqui rendem menos que o déficit, então não há excesso)
+            // e o laço repete com o restante do caixa/déficit. O resultado é a
+            // menor quantidade de produtos para o mesmo capital.
+            //
+            // A prioridade de EFICIÊNCIA (% ao dia) é preservada (decisão A11):
+            // só no empate de taxa escolhemos a maior cota. Escolher apenas pelo
+            // preço trocaria uma cota de 3% por uma de 2% e atrasaria a meta.
+            const bestPct = Math.max(...affordable.map((t) => t.dailyPercentage));
+            chosen = affordable
+              .filter((t) => Math.abs(t.dailyPercentage - bestPct) < 0.0001)
+              .reduce((best, t) => (t.investedAmount > best.investedAmount ? t : best));
+            const yieldPerUnit = Math.max(0.01, tplDailyYield(chosen));
+            unitsToBuy = Math.max(
+              1,
+              Math.min(
+                Math.floor(deficitRemaining / yieldPerUnit),
+                Math.floor(currentFreeCash / chosen.investedAmount)
+              )
+            );
+          }
+        }
+
+        if (unitsToBuy <= 0) break;
+
+        buy(
+          chosen.name,
+          chosen.investedAmount,
+          unitsToBuy,
+          chosen.dailyPercentage,
+          chosen.durationDays,
+          chosen.returnCapitalAtEnd ?? false,
+          chosen.id
+        );
       }
 
-      /**
-       * O plano do dia é IDÊNTICO esteja o dia confirmado ou não: o que a
-       * sugestão mostra é exatamente o que "Marcar Concluído" executa.
-       */
-      for (const item of plannedPurchases) {
-        const accepted = buy(
-          item.template.name,
-          item.template.investedAmount,
-          item.units,
-          item.template.dailyPercentage,
-          item.template.durationDays,
-          item.template.returnCapitalAtEnd ?? false,
-          item.template.id
+      // Cota base como último recurso.
+      if (deficitRemaining > 0.001 && currentFreeCash >= reinvestmentUnit.price) {
+        const baseYield = Math.max(
+          0.01,
+          reinvestmentUnit.price * (reinvestmentUnit.dailyPercentage / 100)
         );
-
-        if (accepted === false) break;
+        const unitsToBuy = Math.min(
+          Math.ceil(deficitRemaining / baseYield),
+          Math.floor(currentFreeCash / reinvestmentUnit.price)
+        );
+        if (unitsToBuy > 0) {
+          buy(
+            reinvestmentUnit.name,
+            reinvestmentUnit.price,
+            unitsToBuy,
+            reinvestmentUnit.dailyPercentage,
+            reinvestmentUnit.durationDays,
+            reinvestmentUnit.returnCapitalAtEnd,
+            'base_unit'
+          );
+        }
       }
     }
 
@@ -1667,23 +1576,6 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     }
 
     // --- 8. Registro escalar do dia ------------------------------------
-    // Recalcula a carteira ativa já COM as compras de hoje aplicadas, para
-    // exibição ("Capital em custódia"). Não reaproveita `activeCount`/
-    // `activeInvestedAmount` (Seção 1) porque esses ficam intencionalmente
-    // defasados de 1 dia (usados na lógica de meta/otimização, que não deve
-    // contar uma compra do próprio dia — ela ainda não rendeu nada).
-    let activeContractsCountDisplay = 0;
-    let activeInvestedAmountDisplay = 0;
-    for (const c of contracts) {
-      // Mesma regra da Seção 1: a prévia de hoje não conta como ativa no seu
-      // próprio dia, mas passa a contar nos dias seguintes da projeção.
-      if (c.isUnconfirmedPreview && day <= c.startDay) continue;
-      if (day >= c.startDay && day < c.endDay) {
-        activeContractsCountDisplay += 1;
-        activeInvestedAmountDisplay += c.investedAmount;
-      }
-    }
-
     const reservedForExpensesCalc = Number(Math.min(bankBalance, reservedCashForPending).toFixed(2));
     const reservedForReinvestmentCalc = Number(
       Math.max(0, bankBalance - reservedForExpensesCalc - totalProtectedCashAccumulated).toFixed(2)
@@ -1718,8 +1610,8 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
       reinvestedToday: Number(reinvestedToday.toFixed(2)),
       totalReinvestedUpToDay: Number(totalReinvested.toFixed(2)),
       newInvestmentsTodayAmount: Number(newInvestmentsTodayAmount.toFixed(2)),
-      activeContractsCount: activeContractsCountDisplay,
-      activeInvestedAmount: Number(activeInvestedAmountDisplay.toFixed(2)),
+      activeContractsCount: activeCount,
+      activeInvestedAmount: Number(activeInvestedAmount.toFixed(2)),
       isProtectionPoint: isProtectionPointToday,
       expenseIdsToday,
       isOptimizationPhase: startOptimizationDay !== null && day >= startOptimizationDay,
@@ -1764,6 +1656,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   const toSnapshot = (c: InternalContract, day: number): RoadmapContractSnapshot => ({
     id: c.id,
     name: c.name,
+    baseName: c.baseName ?? c.name,
     investedAmount: c.investedAmount,
     unitPrice: c.unitPrice,
     units: c.units,
@@ -1792,42 +1685,37 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     const rec = dayRecords.find((r) => r.day === day);
     if (!rec) return null;
 
-    // CORREÇÃO (bug de duplicidade): `buy()` grava toda compra planejada em
-    // `contracts` E em `projectedAcquisitions` na mesma chamada — inclusive
-    // no dia de hoje ainda não confirmado (ramo de prévia). Antes, esta
-    // função também recompunha uma segunda lista ("pendingAcquisitionsToday")
-    // a partir de `projectedAcquisitions` filtrando por
-    // `!canRealizeRoadmapAction(acq.date)`, mas essa condição só é verdadeira
-    // exatamente no caso "hoje, ainda não confirmado" — o mesmo caso já
-    // coberto por `contracts` abaixo. O resultado era a MESMA aquisição
-    // aparecendo duas vezes em `acquisitionsToday` (ex.: uma cota de R$100
-    // exibida como duas, sugerindo R$200 de compra com apenas R$108 livres),
-    // e pior: `handleCompleteRoadmapDay` no App usa essa lista para criar um
-    // produto por item, então "Marcar Concluído" chegava a materializar a
-    // compra duplicada de verdade na carteira. `contracts` já é a fonte
-    // completa (inclui a prévia de hoje), então a segunda lista é redundante
-    // e foi removida.
-    // CORREÇÃO (duplicação ao "Marcar Concluído"):
-    // Um InternalContract agrega N cotas idênticas (`units`), mas o App cria
-    // UM produto por item desta lista. Um contrato de 4 cotas virava 1 produto
-    // com o valor cheio; pior, quando o plano do dia empilhava várias linhas,
-    // cada linha virava outro produto — o usuário via 1 compra sugerida e a
-    // conclusão do dia materializava 4 ativos.
-    //
-    // A lista agora é DEDUPLICADA e expandida de forma consistente: cada
-    // contrato do dia vira exatamente `units` entradas de UMA cota cada
-    // (unitPrice), que é o que o App deve criar como produto individual.
-    const acquisitionsToday = contracts
-      .filter((c) => c.startDay === day && !c.isInitialPortfolio)
-      .flatMap((c) => {
-        const unitCount = Math.max(1, Math.round(c.units || 1));
-        const unitContract: InternalContract = {
-          ...c,
-          units: 1,
-          investedAmount: Number((c.unitPrice || c.investedAmount / unitCount).toFixed(2)),
-        };
-        return Array.from({ length: unitCount }, () => toSnapshot(unitContract, day));
-      });
+    const pendingAcquisitionsToday: RoadmapContractSnapshot[] = projectedAcquisitions
+      .filter((acq) => acq.day === day && !canRealizeRoadmapAction(acq.date))
+      .map((acq) => ({
+        id: acq.id,
+        name: acq.name,
+        baseName: acq.name,
+        investedAmount: acq.totalSpent,
+        unitPrice: acq.unitPrice,
+        units: acq.units,
+        dailyPercentage: acq.dailyPercentage,
+        dailyYield: acq.dailyYieldAdded,
+        durationDays: acq.durationDays,
+        startDateFormatted: acq.dateFormatted,
+        endDateFormatted: formatDateBR(addDays(acq.date, acq.durationDays)),
+        startDay: acq.day,
+        endDay: acq.day + acq.durationDays,
+        daysRemaining: acq.durationDays,
+        returnCapitalAtEnd: acq.returnCapitalAtEnd,
+        isReinvestment: true,
+        isNewInvestment: true,
+        isInitialPortfolio: false,
+        isAcquiredToday: false,
+        acquisitionDay: acq.day,
+      }));
+
+    const acquisitionsToday = [
+      ...contracts
+        .filter((c) => c.startDay === day && !c.isInitialPortfolio)
+        .map((c) => toSnapshot(c, day)),
+      ...pendingAcquisitionsToday,
+    ];
 
     return {
       day: rec.day,
@@ -1870,38 +1758,23 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
         ? Number(Math.min(100, (rec.dailyGross / targetDailyYield) * 100).toFixed(1))
         : 100,
       isGoalReached: rec.dailyGross >= targetDailyYield,
-      // CORREÇÃO (leak de prévia não confirmada): uma prévia de hoje ainda
-      // não confirmada (`isUnconfirmedPreview`) nunca teve o caixa debitado
-      // de verdade, então não pode contar como ativa em NENHUM dia — nem no
-      // próprio dia, nem (o bug anterior) a partir do dia seguinte. Ela só
-      // aparece como plano em `acquisitionsToday`/`Aquisições`, e só entra
-      // aqui de fato quando o usuário confirma o dia (o que remove a flag).
       activeContracts: contracts
-        .filter((c) => day >= c.startDay && day < c.endDay && !(c.isUnconfirmedPreview && day <= c.startDay))
+        .filter((c) => day >= c.startDay && day < c.endDay)
         .map((c) => toSnapshot(c, day)),
       acquisitionsToday,
       newPurchasesToday: acquisitionsToday,
       newInvestmentsToday: acquisitionsToday,
-      // CORREÇÃO: a condição antiga (`isNewInvestment || !isInitialPortfolio`)
-      // era um OR que qualquer contrato não-inicial já satisfazia — na
-      // prática esta lista saía idêntica a `allReinvestmentsUpToDay`, em vez
-      // de isolar só os investimentos genuinamente novos.
       newInvestmentsUpToDay: contracts
-        .filter((c) => c.startDay <= day && c.isNewInvestment === true && !c.isUnconfirmedPreview)
+        .filter((c) => c.startDay <= day && (c.isNewInvestment || !c.isInitialPortfolio))
         .map((c) => toSnapshot(c, day)),
-      // CORREÇÃO: contava TODO contrato não-inicial (novos + reinvestidos)
-      // como "aporte", mas o card "Total reinvestido" (totalReinvestedUpToDay)
-      // soma só os contratos de reinvestimento — a legenda "X aportes" nunca
-      // batia com o valor em R$ mostrado acima dela. Agora os dois vêm do
-      // mesmo conjunto (isReinvestment).
       allReinvestmentsUpToDay: contracts
-        .filter((c) => c.startDay <= day && c.isReinvestment === true && !c.isUnconfirmedPreview)
+        .filter((c) => c.startDay <= day && !c.isInitialPortfolio)
         .map((c) => toSnapshot(c, day)),
       expiredContractsUpToDay: contracts
-        .filter((c) => c.endDay <= day && !c.isUnconfirmedPreview)
+        .filter((c) => c.endDay <= day)
         .map((c) => toSnapshot(c, day)),
       expiredTodayContracts: contracts
-        .filter((c) => c.endDay === day && !c.isUnconfirmedPreview)
+        .filter((c) => c.endDay === day)
         .map((c) => toSnapshot(c, day)),
       expensesTodayList: (() => {
         const paidOrDeducted = rec.expenseIdsToday
@@ -2003,9 +1876,10 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     (m) => m.type === 'capital_protection' && (m.protectionAmount ?? m.amount ?? 0) > 0
   );
 
-  // Agrupamento dos novos produtos projetados para aquisição durante o ciclo
+  // Agrupamento dos novos produtos projetados para aquisição durante o ciclo visível
+  const visibleAcquisitions = projectedAcquisitions.filter((a) => a.day <= displayHorizon);
   const groupMap = new Map<string, ProjectedAcquisitionGroup>();
-  for (const acq of projectedAcquisitions) {
+  for (const acq of visibleAcquisitions) {
     const existing = groupMap.get(acq.name);
     if (existing) {
       existing.totalUnits += acq.units;
@@ -2030,11 +1904,11 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
   }
 
   const projectedAcquisitionsGrouped = Array.from(groupMap.values());
-  const totalProjectedAcquisitionsCount = projectedAcquisitions.reduce(
+  const totalProjectedAcquisitionsCount = visibleAcquisitions.reduce(
     (sum, a) => sum + a.units,
     0
   );
-  const totalProjectedAcquisitionsAmount = projectedAcquisitions.reduce(
+  const totalProjectedAcquisitionsAmount = visibleAcquisitions.reduce(
     (sum, a) => sum + a.totalSpent,
     0
   );
@@ -2074,21 +1948,8 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
           : `Atingir a meta para iniciar a consolidação de produtos`,
   };
 
-  /**
-   * Renda diaria PREVISTA: a real (contratos existentes) somada ao que as
-   * compras planejadas para hoje vao acrescentar. O painel do dia ja mostrava
-   * esse total, mas o cartao de topo mostrava so a real — dai a divergencia.
-   */
-  const projectedDailyYield = (() => {
-    const pendingToday = projectedAcquisitions
-      .filter((acq) => acq.date === today)
-      .reduce((sum, acq) => sum + (acq.dailyYieldAdded || 0), 0);
-    return Number((currentDailyYield + pendingToday).toFixed(2));
-  })();
-
   return {
     currentDailyYield: Number(currentDailyYield.toFixed(2)),
-    projectedDailyYield,
     targetDailyYield,
     percentOfGoalReached: targetDailyYield > 0
       ? Number(Math.min(100, (currentDailyYield / targetDailyYield) * 100).toFixed(1))
@@ -2137,7 +1998,7 @@ export function calculatePortfolioRoadmap(options: PortfolioRoadmapOptions): Por
     optimizationSummary,
     unfundableExpenses,
     reinvestmentUnitUsed: reinvestmentUnit,
-    projectedAcquisitions,
+    projectedAcquisitions: visibleAcquisitions,
     projectedAcquisitionsGrouped,
     totalProjectedAcquisitionsCount,
     totalProjectedAcquisitionsAmount,

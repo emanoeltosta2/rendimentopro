@@ -2,32 +2,20 @@ export interface InvestmentProduct {
   id: string;
   name: string;
   investedAmount: number; // R$ Investido
-  returnAmount?: number; // R$ de retorno (rendimento total ou diário configurado)
+  returnAmount?: number; // R$ de retorno (rendimento total ou di├írio configurado)
   returnType?: 'total' | 'daily'; // Modalidade informada do retorno
   dailyPercentage: number; // % ao dia (calculada ou direta)
-  durationDays: number; // Duração em dias (ex: 30)
+  durationDays: number; // Dura├º├úo em dias (ex: 30)
   startDate: string; // YYYY-MM-DD
-  returnCapitalAtEnd: boolean; // Se o capital inicial é devolvido no final além dos rendimentos diários
-  category?: string; // ex: Arbitragem, Cripto, Renda Fixa, Robô, Aporte
+  returnCapitalAtEnd: boolean; // Se o capital inicial ├® devolvido no final al├®m dos rendimentos di├írios
+  category?: string; // ex: Arbitragem, Cripto, Renda Fixa, Rob├┤, Aporte
   status: 'active' | 'completed' | 'paused';
   notes?: string;
   isReinvestment?: boolean;
   isNewInvestment?: boolean;
-  /** Metadados internos: produto criado ao concluir uma ação do Roadmap. */
+  /** Metadados internos: produto criado ao concluir uma a├º├úo do Roadmap. */
   roadmapAcquisitionDate?: string;
   roadmapAcquisitionDay?: number;
-  /**
-   * IDENTIDADE da operação que criou este produto.
-   *
-   * Formato: `acq_<YYYY-MM-DD>_<sequência>`, gerado de forma determinística
-   * pelo plano do dia. É o ÚNICO critério usado para decidir se uma cota já
-   * foi comprada — nunca a semelhança entre nome/valor/data, que confundia
-   * duas compras legítimas iguais e deixava passar duplicatas quando o
-   * rótulo de origem mudava o nome do produto.
-   */
-  acquisitionId?: string;
-  /** Posição da cota dentro do plano do dia (0-based, mesma origem do id). */
-  acquisitionSequence?: number;
 }
 
 export interface ProductTemplate {
@@ -37,9 +25,9 @@ export interface ProductTemplate {
   returnAmount?: number; // R$ 160,00
   returnType?: 'total' | 'daily'; // 'total' | 'daily'
   dailyPercentage: number; // % ao dia
-  durationDays: number; // Duração em dias (ex: 16)
+  durationDays: number; // Dura├º├úo em dias (ex: 16)
   returnCapitalAtEnd: boolean; // false
-  category?: string; // Robô / Arbitragem
+  category?: string; // Rob├┤ / Arbitragem
   notes?: string;
   createdAt?: string;
 }
@@ -53,12 +41,12 @@ export interface Expense {
   category: 'Moradia' | 'Cartão / Fatura' | 'Serviços' | 'Alimentação' | 'Reinvestimento' | 'Imprevisto' | 'Outros';
   isPaid: boolean;
   paidDate?: string;
-  /** Indica que a quitação foi aplicada automaticamente ao concluir um dia do Roadmap. */
+  /** Indica que a quita├º├úo foi aplicada automaticamente ao concluir um dia do Roadmap. */
   roadmapPaidDate?: string;
-  deductFromRoadmap?: boolean; // Se abater do saldo de reinvestimento do Roadmap (Padrão: true)
+  deductFromRoadmap?: boolean; // Se abater do saldo de reinvestimento do Roadmap (Padr├úo: true)
   notes?: string;
   installmentGroupId?: string; // ID do grupo de parcelas se for gasto parcelado
-  installmentNumber?: number; // Número da parcela atual (ex: 1)
+  installmentNumber?: number; // N├║mero da parcela atual (ex: 1)
   totalInstallments?: number; // Total de parcelas (ex: 12)
 }
 
@@ -66,18 +54,18 @@ export interface PlatformSettings {
   withdrawalFeePercentage: number; // ex: 5 (para 5% de taxa por saque)
   fixedWithdrawalFee: number; // ex: 0 ou taxa fixa em R$
   minWithdrawalAmount: number; // ex: 50.00
-  minDepositAmount?: number; // ex: 50.00 (Depósito mínimo para aportes/reinvestimentos)
-  dailyGoalAmount: number; // R$ meta de rendimento diário desejada
-  reinvestmentBufferPercentage: number; // Margem de segurança de rendimento para manter reinvestindo (ex: 20%)
+  minDepositAmount?: number; // ex: 50.00 (Dep├│sito m├¡nimo para aportes/reinvestimentos)
+  dailyGoalAmount: number; // R$ meta de rendimento di├írio desejada
+  reinvestmentBufferPercentage: number; // Margem de seguran├ºa de rendimento para manter reinvestindo (ex: 20%)
   goalCycleStartDate?: string; // Data YYYY-MM-DD em que o ciclo de meta atual foi iniciado/resetado
   roadmapStartDate?: string; // Alias de compatibilidade para goalCycleStartDate
-  dynamicBufferEnabled?: boolean; // Se o buffer de reinvestimento protegido dinâmico está ativado (Padrão: true)
-  protectionProfile?: 'conservative' | 'balanced' | 'aggressive' | 'accelerated'; // Perfil de proteção contra risco de plataforma
-  completedRoadmapDays?: string[]; // Lista de datas YYYY-MM-DD com ações do dia já concluídas
+  dynamicBufferEnabled?: boolean; // Se o buffer de reinvestimento protegido din├ómico est├í ativado (Padr├úo: true)
+  protectionProfile?: 'conservative' | 'balanced' | 'aggressive' | 'accelerated'; // Perfil de prote├º├úo contra risco de plataforma
+  completedRoadmapDays?: string[]; // Lista de datas YYYY-MM-DD com a├º├Áes do dia j├í conclu├¡das
   /** Aporte externo livre que passa a existir a partir do dia atual do roadmap. */
   manualBankInjection?: number;
   manualBankInjectionDate?: string;
-  /** Aporte externo destinado à reserva de blindagem a partir do dia atual. */
+  /** Aporte externo destinado ├á reserva de blindagem a partir do dia atual. */
   manualProtectionInjection?: number;
   manualProtectionInjectionDate?: string;
   /** Lançamentos manuais de caixa, um por registro, com data própria. */
@@ -106,14 +94,14 @@ export interface ManualCashMovement {
 }
 
 export interface ProductCalculations {
-  dailyYield: number; // Rendimento diário em R$
-  totalDailyYieldSum: number; // Soma de rendimentos diários durante o período
+  dailyYield: number; // Rendimento di├írio em R$
+  totalDailyYieldSum: number; // Soma de rendimentos di├írios durante o per├¡odo
   grossReturnAmount: number; // Total bruto recebido (rendimento + capital devolvido se houver)
   grossReturnPercentage: number; // % de retorno bruto sobre o investimento
-  netProfitAmount: number; // Lucro líquido real (após taxa de saque e dedução do capital investido)
-  netProfitPercentage: number; // % de lucro líquido real
+  netProfitAmount: number; // Lucro l├¡quido real (ap├│s taxa de saque e dedu├º├úo do capital investido)
+  netProfitPercentage: number; // % de lucro l├¡quido real
   totalWithdrawalFee: number; // Valor retido em taxas de saque estimadas
-  paybackDays: number; // Dias necessários para recuperar o capital investido
+  paybackDays: number; // Dias necess├írios para recuperar o capital investido
   endDate: string; // YYYY-MM-DD
   daysElapsed: number;
   daysRemaining: number;
@@ -136,7 +124,7 @@ export interface DayDetail {
   }[];
   expensesDue: Expense[];
   expensesRecommended: Expense[];
-  accumulatedBalance: number; // Saldo líquido acumulado até a data
+  accumulatedBalance: number; // Saldo l├¡quido acumulado at├® a data
 }
 
 export interface ExpensePaymentOptimization {
@@ -144,17 +132,17 @@ export interface ExpensePaymentOptimization {
   bestDate: string; // YYYY-MM-DD
   bestDateFormatted: string; // DD/MM/AAAA
   daysBeforeDue: number; // Quantos dias antes do vencimento
-  accumulatedYieldAtDate: number; // Saldo líquido disponível no dia recomendado
+  accumulatedYieldAtDate: number; // Saldo l├¡quido dispon├¡vel no dia recomendado
   requiredAmountWithFee: number; // Valor da despesa + taxa de saque para liquidar
   withdrawalFee: number; // Taxa de saque aplicada
   remainingBufferForReinvestment: number; // Saldo que sobra para continuar investindo
   isFeasibleWithYieldOnly: boolean; // Se o rendimento acumulado cobre a despesa a tempo
-  deficitAmount: number; // Se não cobrir 100%, quanto falta
-  reasoning: string; // Explicação detalhada amigável
-  safetyLevel: 'safe' | 'tight' | 'insufficient'; // Status da recomendação
+  deficitAmount: number; // Se n├úo cobrir 100%, quanto falta
+  reasoning: string; // Explica├º├úo detalhada amig├ível
+  safetyLevel: 'safe' | 'tight' | 'insufficient'; // Status da recomenda├º├úo
   goalDelayDays: number; // Impacto na meta se pagar neste dia (em dias de atraso na meta)
-  riskMitigationTip?: string; // Dica de proteção contra instabilidade/queda da plataforma
-  earlyPaymentBenefit?: string; // Por que antecipar blinda contra prejuízos
+  riskMitigationTip?: string; // Dica de prote├º├úo contra instabilidade/queda da plataforma
+  earlyPaymentBenefit?: string; // Por que antecipar blinda contra preju├¡zos
 }
 
 export interface PortfolioMilestone {
@@ -181,13 +169,13 @@ export interface PortfolioMilestone {
   title: string;
   description: string;
   amount?: number; // Valor total do saque bruto ou reinvestimento
-  expenseAmount?: number; // Valor líquido da despesa (valor a ser pago)
+  expenseAmount?: number; // Valor l├¡quido da despesa (valor a ser pago)
   feeAmount?: number; // Valor da taxa de saque retida
   dailyYieldAfter: number;
   units?: number;
   protectionAmount?: number; // Quantia sugerida para guardar/blindar contra instabilidade da plataforma
-  protectionReason?: string; // Motivo inteligente da proteção (ex: Payback, Duração, Despesas)
-  protectionPercent?: number; // % do capital inicial já protegido
+  protectionReason?: string; // Motivo inteligente da prote├º├úo (ex: Payback, Dura├º├úo, Despesas)
+  protectionPercent?: number; // % do capital inicial j├í protegido
   riskExposureLevel?: 'low' | 'moderate' | 'high'; // Risco estimado da carteira no momento
 }
 
@@ -222,10 +210,16 @@ export interface RoadmapContractSnapshot {
   name: string;
   /** Total investido no contrato (unitPrice * units). */
   investedAmount: number;
-  /** Preço de uma cota. */
+  /** Pre├ºo de uma cota. */
   unitPrice: number;
-  /** Quantidade de cotas idênticas agregadas neste contrato. */
+  /** Quantidade de cotas id├¬nticas agregadas neste contrato. */
   units: number;
+  /**
+   * Nome do modelo/produto SEM o rótulo da simulação. `name` pode vir como
+   * "Reinvestimento (NW354)"; `baseName` é sempre "NW354". É o nome que deve
+   * ser gravado ao transformar a aquisição em produto real.
+   */
+  baseName?: string;
   dailyPercentage: number;
   dailyYield: number;
   durationDays: number;
@@ -237,7 +231,7 @@ export interface RoadmapContractSnapshot {
   returnCapitalAtEnd: boolean;
   isReinvestment: boolean;
   isNewInvestment?: boolean;
-  /** Indica se o contrato é originário da carteira existente no início do ciclo */
+  /** Indica se o contrato ├® origin├írio da carteira existente no in├¡cio do ciclo */
   isInitialPortfolio?: boolean;
   /** Indica se o contrato foi adquirido exatamente no dia inspecionado */
   isAcquiredToday?: boolean;
@@ -253,17 +247,17 @@ export interface RoadmapPointDetails {
   dailyYieldNet: number;
   accumulatedYield: number;
   cashBalance: number;
-  /** Saldo líquido disponível na conta bancária (fora do risco da plataforma). */
+  /** Saldo l├¡quido dispon├¡vel na conta banc├íria (fora do risco da plataforma). */
   bankBalance?: number;
-  /** Saldo bruto retido na plataforma (aguardando atingir valor mínimo de saque). */
+  /** Saldo bruto retido na plataforma (aguardando atingir valor m├¡nimo de saque). */
   platformBalance?: number;
   reservedForExpenses?: number;
   reservedForReinvestment?: number;
-  dynamicBufferPercentage?: number; // % de buffer dinâmico calculado para o dia
+  dynamicBufferPercentage?: number; // % de buffer din├ómico calculado para o dia
   suggestedProtectionToday?: number; // R$ sugerido para guardar/resguardar hoje
   totalProtectedAccumulated?: number; // R$ total acumulado resguardado fora de risco
-  riskExposureLevel?: 'low' | 'moderate' | 'high'; // Nível de risco da carteira
-  protectionTip?: string; // Recomendação contextual do algoritmo
+  riskExposureLevel?: 'low' | 'moderate' | 'high'; // N├¡vel de risco da carteira
+  protectionTip?: string; // Recomenda├º├úo contextual do algoritmo
   contractDurationRisk?: {
     avgRemainingDays: number;
     maxRemainingDays: number;
@@ -292,13 +286,13 @@ export interface RoadmapPointDetails {
   expiredContractsUpToDay: RoadmapContractSnapshot[];
   expiredTodayContracts: RoadmapContractSnapshot[];
   expensesTodayList: Expense[];
-  /** Indica se esta data é o marco/ponto de início da projeção do roadmap. */
+  /** Indica se esta data ├® o marco/ponto de in├¡cio da proje├º├úo do roadmap. */
   isStartDate?: boolean;
   /** Indica se esta data corresponde ao dia civil atual. */
   isToday?: boolean;
-  /** Indica se este dia está dentro do período de otimização de produtos pós-meta */
+  /** Indica se este dia est├í dentro do per├¡odo de otimiza├º├úo de produtos p├│s-meta */
   isOptimizationPhase?: boolean;
-  /** Indica se neste dia a carteira já alcançou o número mínimo de contratos otimizados */
+  /** Indica se neste dia a carteira j├í alcan├ºou o n├║mero m├¡nimo de contratos otimizados */
   isOptimizedState?: boolean;
 }
 
@@ -307,37 +301,37 @@ export interface PortfolioRoadmapPoint {
   date: string;
   dateFormatted: string;
   dailyYield: number; // R$/dia bruto
-  dailyYieldNet: number; // R$/dia líquido (pós taxa)
-  accumulatedYield: number; // R$ acumulado até esta data
+  dailyYieldNet: number; // R$/dia l├¡quido (p├│s taxa)
+  accumulatedYield: number; // R$ acumulado at├® esta data
   capitalReturnedToday: number;
   expensesDeductedToday: number;
   reinvestedToday: number;
   newInvestmentsToday?: number;
   activeContractsCount: number;
   activeInvestedAmount: number;
-  targetYield: number; // Meta diária configurada
+  targetYield: number; // Meta di├íria configurada
   dynamicBufferPercentage?: number;
   suggestedProtectionToday?: number;
   totalProtectedAccumulated?: number;
   isProtectionPoint?: boolean;
   isGoalReached?: boolean;
-  /** Indica se este dia está dentro do período de otimização pós-meta */
+  /** Indica se este dia est├í dentro do per├¡odo de otimiza├º├úo p├│s-meta */
   isOptimizationPhase?: boolean;
-  /** Indica se neste dia a carteira já alcançou o número mínimo de produtos */
+  /** Indica se neste dia a carteira j├í alcan├ºou o n├║mero m├¡nimo de produtos */
   isOptimizedState?: boolean;
-  /** Indica se este ponto representa o Ponto de Início da projeção. */
+  /** Indica se este ponto representa o Ponto de In├¡cio da proje├º├úo. */
   isStartDate?: boolean;
-  /** Indica o dia civil atual, para separar o presente da projeção futura. */
+  /** Indica o dia civil atual, para separar o presente da proje├º├úo futura. */
   isToday?: boolean;
-  /** Caixa líquido seguro na conta bancária ao fim do dia. */
+  /** Caixa l├¡quido seguro na conta banc├íria ao fim do dia. */
   bankBalance?: number;
-  /** Saldo bruto retido na plataforma ao fim do dia (aguardando saque mínimo). */
+  /** Saldo bruto retido na plataforma ao fim do dia (aguardando saque m├¡nimo). */
   platformBalance?: number;
   /** Caixa livre ao fim do dia (espelho de bankBalance). */
   cashBalance?: number;
 }
 
-/** Despesa que a projeção de caixa não consegue cobrir dentro do prazo. */
+/** Despesa que a proje├º├úo de caixa n├úo consegue cobrir dentro do prazo. */
 export interface UnfundableExpense {
   expenseId: string;
   title: string;
@@ -349,83 +343,76 @@ export interface UnfundableExpense {
 }
 
 export interface PortfolioOptimizationSummary {
-  /** Se o período de otimização foi ativado / iniciado após a meta */
+  /** Se o per├¡odo de otimiza├º├úo foi ativado / iniciado ap├│s a meta */
   isOptimizationActive: boolean;
-  /** Se a carteira já atingiu o estado mínimo otimizado */
+  /** Se a carteira j├í atingiu o estado m├¡nimo otimizado */
   isOptimized: boolean;
-  /** Dia da simulação em que a meta foi batida e a otimização começou */
+  /** Dia da simula├º├úo em que a meta foi batida e a otimiza├º├úo come├ºou */
   startDay: number | null;
   startDateFormatted: string | null;
-  /** Dia da simulação em que a carteira atingiu o número mínimo de produtos */
+  /** Dia da simula├º├úo em que a carteira atingiu o n├║mero m├¡nimo de produtos */
   completionDay: number | null;
   completionDateFormatted: string | null;
   /** Quantidade de produtos/contratos ativos no momento em que a meta foi atingida */
   initialContractsAtGoal: number;
-  /** Quantidade mínima necessária de produtos para sustentar a meta */
+  /** Quantidade m├¡nima necess├íria de produtos para sustentar a meta */
   minPossibleContracts: number;
-  /** Quantidade final de produtos após a consolidação */
+  /** Quantidade final de produtos ap├│s a consolida├º├úo */
   optimizedContractsCount: number;
   /** Quantidade de produtos reduzidos/eliminados */
   contractsReduced: number;
-  /** Percentual de redução na quantidade de produtos ativos */
+  /** Percentual de redu├º├úo na quantidade de produtos ativos */
   reductionPercentage: number;
-  /** Duração em dias do período de consolidação/otimização */
+  /** Dura├º├úo em dias do per├¡odo de consolida├º├úo/otimiza├º├úo */
   durationDays: number;
-  /** Descrição amigável do status da otimização */
+  /** Descri├º├úo amig├ível do status da otimiza├º├úo */
   statusDescription: string;
 }
 
 export interface PortfolioRoadmapSummary {
   currentDailyYield: number;
-  /**
-   * currentDailyYield somado ao que as compras planejadas para HOJE (ainda
-   * não confirmadas) vão acrescentar. O motor já calcula este valor
-   * (roadmap.ts); estava faltando aqui no contrato, então nenhuma tela podia
-   * lê-lo com segurança de tipos.
-   */
-  projectedDailyYield: number;
   targetDailyYield: number;
   percentOfGoalReached: number;
-  /** True somente se a meta já foi atingida em data igual ou anterior a hoje. */
+  /** True somente se a meta j├í foi atingida em data igual ou anterior a hoje. */
   isGoalReached: boolean;
-  /** Data em que a meta foi batida, quando já ocorreu. */
+  /** Data em que a meta foi batida, quando j├í ocorreu. */
   goalReachedOn: string | null;
-  /** Dias de hoje até a meta. 0 quando já foi atingida. */
+  /** Dias de hoje at├® a meta. 0 quando j├í foi atingida. */
   daysToGoal: number | null;
-  /** Dia da simulação (a partir do início do ciclo) em que a meta é batida. */
+  /** Dia da simula├º├úo (a partir do in├¡cio do ciclo) em que a meta ├® batida. */
   daysToGoalFromCycleStart: number | null;
   estimatedGoalDate: string | null;
   estimatedGoalDateFormatted: string | null;
   totalReinvested: number;
   totalNewInvestments: number;
   totalExpensesDeducted: number;
-  /** Soma dos rendimentos brutos. NÃO inclui devolução de principal. */
+  /** Soma dos rendimentos brutos. N├âO inclui devolu├º├úo de principal. */
   totalProjectedGrossYield: number;
   /** Rendimento bruto menos as taxas de saque efetivamente pagas. */
   totalProjectedNetProfit: number;
   /** Principal devolvido no vencimento dos contratos. */
   totalCapitalReturned: number;
-  /** Taxas de saque pagas ao longo da projeção. */
+  /** Taxas de saque pagas ao longo da proje├º├úo. */
   totalWithdrawalFeesPaid: number;
   totalCapitalToReturn: number;
   activeProductsCount: number;
   maxDailyYield: number;
-  /** Saldo líquido final em banco na conclusão do horizonte simulado. */
+  /** Saldo l├¡quido final em banco na conclus├úo do horizonte simulado. */
   finalBankBalance?: number;
-  /** Saldo bruto final na plataforma na conclusão do horizonte simulado. */
+  /** Saldo bruto final na plataforma na conclus├úo do horizonte simulado. */
   finalPlatformBalance?: number;
-  totalProtectedAmountSuggested?: number; // Total sugerido para manter guardado/sacado em segurança
-  protectionCheckpointsCount?: number; // Quantidade de pontos de proteção identificados
-  dynamicBufferAvg?: number; // Média ponderada do buffer dinâmico durante a projeção
-  initialCapitalSecuredPercent?: number; // % do capital inicial que é blindado ao longo da simulação
-  protectionSummaryTip?: string; // Dica resumo da estratégia de mitigação de risco
-  /** Resumo completo do período de otimização e consolidação de produtos pós-meta */
+  totalProtectedAmountSuggested?: number; // Total sugerido para manter guardado/sacado em seguran├ºa
+  protectionCheckpointsCount?: number; // Quantidade de pontos de prote├º├úo identificados
+  dynamicBufferAvg?: number; // M├®dia ponderada do buffer din├ómico durante a proje├º├úo
+  initialCapitalSecuredPercent?: number; // % do capital inicial que ├® blindado ao longo da simula├º├úo
+  protectionSummaryTip?: string; // Dica resumo da estrat├®gia de mitiga├º├úo de risco
+  /** Resumo completo do per├¡odo de otimiza├º├úo e consolida├º├úo de produtos p├│s-meta */
   optimizationSummary?: PortfolioOptimizationSummary;
-  /** Despesas que a projeção não consegue cobrir. Lista vazia é o caso normal. */
+  /** Despesas que a proje├º├úo n├úo consegue cobrir. Lista vazia ├® o caso normal. */
   unfundableExpenses: UnfundableExpense[];
   /** Data base (Dia 0) a partir da qual o roadmap simula o crescimento. */
   baseStartDate?: string;
-  /** True se o usuário fixou um ponto de início customizado para o ciclo. */
+  /** True se o usu├írio fixou um ponto de in├¡cio customizado para o ciclo. */
   isCustomStartPoint?: boolean;
   reinvestmentUnitUsed: {
     name: string;
@@ -434,19 +421,19 @@ export interface PortfolioRoadmapSummary {
     durationDays: number;
     returnCapitalAtEnd: boolean;
   };
-  /** Novos produtos/cotas projetados para aquisição ao longo do ciclo até atingir a meta */
+  /** Novos produtos/cotas projetados para aquisi├º├úo ao longo do ciclo at├® atingir a meta */
   projectedAcquisitions: ProjectedAcquisitionItem[];
   /** Novos produtos agrupados por modelo com total de cotas e dias previstos */
   projectedAcquisitionsGrouped: ProjectedAcquisitionGroup[];
-  /** Quantidade total de cotas que serão necessárias adquirir ao longo do ciclo */
+  /** Quantidade total de cotas que ser├úo necess├írias adquirir ao longo do ciclo */
   totalProjectedAcquisitionsCount: number;
-  /** Valor total em R$ necessário para adquirir todas as cotas projetadas */
+  /** Valor total em R$ necess├írio para adquirir todas as cotas projetadas */
   totalProjectedAcquisitionsAmount: number;
   chartData: PortfolioRoadmapPoint[];
   milestones: PortfolioMilestone[];
   /**
-   * Reconstrói os detalhes de um dia sob demanda. Mantido fora de `chartData`
-   * para não reter o histórico inteiro em cada ponto do gráfico.
+   * Reconstr├│i os detalhes de um dia sob demanda. Mantido fora de `chartData`
+   * para n├úo reter o hist├│rico inteiro em cada ponto do gr├ífico.
    */
   getDayDetails: (day: number) => RoadmapPointDetails | null;
 }
@@ -456,7 +443,7 @@ export interface ReinvestmentOption {
   name: string;
   price: number; // Valor do aporte (ex: 50.00)
   dailyPercentage: number; // % ao dia (ex: 2.5)
-  durationDays: number; // Dias de duração (ex: 30)
+  durationDays: number; // Dias de dura├º├úo (ex: 30)
   returnCapitalAtEnd: boolean;
 }
 
@@ -466,7 +453,7 @@ export interface RoadmapMilestone {
   dateFormatted: string; // DD/MM/AAAA
   accumulatedBalanceBefore: number;
   dailyYieldGenerated: number;
-  dailyYieldNetAfterFee: number; // Rendimento diário após dedução da taxa de saque da plataforma
+  dailyYieldNetAfterFee: number; // Rendimento di├írio ap├│s dedu├º├úo da taxa de saque da plataforma
   withdrawalFeeDeducted: number; // Taxa de saque aplicada no resgate para reinvestir
   capitalReturned: number;
   totalAvailable: number;

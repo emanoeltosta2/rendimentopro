@@ -14,7 +14,7 @@ import {
   Laptop
 } from 'lucide-react';
 import { PlatformSettings } from '../types/investment';
-import { exportDataAsJSON, importDataFromJSON } from '../utils/storage';
+import { importDataFromJSON, downloadFullBackupJSON } from '../utils/storage';
 import { useAuth } from '../services/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -86,7 +86,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleExportJSON = () => {
-    exportDataAsJSON();
+    downloadFullBackupJSON();
+    setImportStatus('Backup baixado com sucesso!');
+    setTimeout(() => setImportStatus(null), 3000);
   };
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -12,7 +12,9 @@ import {
   Rocket,
   Sparkles,
   RotateCw,
-  Star
+  Star,
+  Download,
+  Upload
 } from 'lucide-react';
 import { InvestmentProduct, PlatformSettings, ProductTemplate } from '../types/investment';
 import { 
@@ -25,6 +27,8 @@ import {
   formatPercentBR,
 } from '../utils/calculations';
 import { createId } from '../utils/id';
+import { TemplateExportModal } from './TemplateExportModal';
+import { TemplateImportModal } from './TemplateImportModal';
 
 interface ProductsListProps {
   products: InvestmentProduct[];
@@ -38,6 +42,7 @@ interface ProductsListProps {
   onOpenTemplatesManager?: () => void;
   onQuickLaunchTemplate?: (template: ProductTemplate) => void;
   onSaveTemplate?: (template: ProductTemplate) => void;
+  onImportTemplates?: (templates: ProductTemplate[], mode: 'merge' | 'replace') => void;
 }
 
 /**
@@ -63,9 +68,12 @@ export const ProductsList: React.FC<ProductsListProps> = ({
   onOpenTemplatesManager,
   onQuickLaunchTemplate,
   onSaveTemplate,
+  onImportTemplates,
 }) => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'paused'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTemplateExportModalOpen, setIsTemplateExportModalOpen] = useState(false);
+  const [isTemplateImportModalOpen, setIsTemplateImportModalOpen] = useState(false);
 
   const today = getTodayString();
 
@@ -168,6 +176,29 @@ export const ProductsList: React.FC<ProductsListProps> = ({
             </button>
           </div>
 
+          {/* Ações de Exportação e Importação do Catálogo de Produtos */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setIsTemplateExportModalOpen(true)}
+              className="px-2.5 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Exportar catálogo de produtos para arquivo JSON ou planilha CSV"
+            >
+              <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Exportar Catálogo</span>
+            </button>
+
+            {onImportTemplates && (
+              <button
+                onClick={() => setIsTemplateImportModalOpen(true)}
+                className="px-2.5 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Importar catálogo de produtos a partir de arquivo JSON ou planilha CSV"
+              >
+                <Upload className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Importar Catálogo</span>
+              </button>
+            )}
+          </div>
+
           {onOpenTemplatesManager && (
             <button
               onClick={onOpenTemplatesManager}
@@ -200,12 +231,37 @@ export const ProductsList: React.FC<ProductsListProps> = ({
               </span>
             </div>
             {onOpenTemplatesManager && (
-              <button
-                onClick={onOpenTemplatesManager}
-                className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 hover:underline cursor-pointer"
-              >
-                + Cadastrar Novo Modelo
-              </button>
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setIsTemplateExportModalOpen(true)}
+                  className="font-semibold text-indigo-700 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Download className="h-3 w-3" />
+                  <span>Exportar</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                {onImportTemplates && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsTemplateImportModalOpen(true)}
+                      className="font-semibold text-indigo-700 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Upload className="h-3 w-3" />
+                      <span>Importar</span>
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={onOpenTemplatesManager}
+                  className="font-bold text-indigo-700 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 hover:underline cursor-pointer"
+                >
+                  + Cadastrar Novo Modelo
+                </button>
+              </div>
             )}
           </div>
 
@@ -459,6 +515,23 @@ export const ProductsList: React.FC<ProductsListProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Modal de Exportação do Catálogo */}
+      <TemplateExportModal
+        isOpen={isTemplateExportModalOpen}
+        onClose={() => setIsTemplateExportModalOpen(false)}
+        templates={templates}
+      />
+
+      {/* Modal de Importação do Catálogo */}
+      {onImportTemplates && (
+        <TemplateImportModal
+          isOpen={isTemplateImportModalOpen}
+          onClose={() => setIsTemplateImportModalOpen(false)}
+          onImport={onImportTemplates}
+          existingTemplatesCount={templates.length}
+        />
       )}
     </div>
   );
